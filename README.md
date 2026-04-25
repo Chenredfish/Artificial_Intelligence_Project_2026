@@ -43,15 +43,15 @@ Then open `http://localhost:5000` in your browser.
 - [ ] Project folder structure (`src/`, `static/`, `templates/`)
 
 ### Batch 2 — Board & Movement Core
-- [ ] 8x8 board data structure and piece placement
-- [ ] Move generation per piece type:
+- [x] 8x8 board data structure and piece placement
+- [x] Move generation per piece type:
   - A, U — orthogonal (4 directions), 1–2 squares
   - B, V — diagonal (4 directions), 1–2 squares
   - c, d, w, x — orthogonal, 1 square
   - e, f, y, z — diagonal, 1 square
-- [ ] Path clearance check (no jumping over pieces)
-- [ ] Boundary check
-- [ ] Capture logic (land on opponent's square)
+- [x] Path clearance check (no jumping over pieces)
+- [x] Boundary check
+- [x] Capture logic (land on opponent's square)
 
 ### Batch 3 — Game Flow
 - [ ] Game state: whose turn, round counter (max 20 rounds)
