@@ -34,11 +34,25 @@ class Board:
 
     @classmethod
     def from_grid(cls, grid):
-        """Build from 8x8 list; use '.' or None for empty squares."""
+        """Build from 8x8 list; use '.', '+', or None for empty squares."""
+        if len(grid) != 8:
+            raise ValueError("Board must have exactly 8 rows")
+
+        for row in grid:
+            if len(row) != 8:
+                raise ValueError("Each row must have exactly 8 columns")
+
         board = cls()
+
         for r, row in enumerate(grid):
             for c, cell in enumerate(row):
-                board._grid[r][c] = None if cell in (None, '.', '+') else cell
+                if cell in (None, '.', '+'):
+                    board._grid[r][c] = None
+                elif cell in PIECE_POINTS:
+                    board._grid[r][c] = cell
+                else:
+                    raise ValueError(f"Invalid piece at ({r},{c}): {cell}")
+
         return board
 
     def copy(self):

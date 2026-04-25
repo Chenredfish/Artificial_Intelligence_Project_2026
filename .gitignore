@@ -36,3 +36,9 @@ models/weights/
 *.pt
 *.pth
 *.ckpt
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
