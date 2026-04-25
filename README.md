@@ -54,10 +54,10 @@ Then open `http://localhost:5000` in your browser.
 - [x] Capture logic (land on opponent's square)
 
 ### Batch 3 — Game Flow
-- [ ] Game state: whose turn, round counter (max 20 rounds)
-- [ ] Turn alternation (AB first, UV second)
-- [ ] **Per-move response time + cumulative total time display** *(required for 4/28 demo)*
-- [ ] Move notation output (e.g. `B:(3,5)-(2,4)`)
+- [x] Game state: whose turn, round counter (max 20 rounds)
+- [x] Turn alternation (AB first, UV second)
+- [x] **Per-move response time + cumulative total time display** *(required for 4/28 demo)*
+- [x] Move notation output (e.g. `B:(3,5)-(2,4)`)
 - [ ] Initial board input (manual entry or text file)
 
 ### Batch 4 — Web Interface
