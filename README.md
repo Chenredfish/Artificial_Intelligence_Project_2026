@@ -64,14 +64,14 @@ Then open `http://localhost:5000` in your browser.
 - [x] Turn alternation (AB first, UV second)
 - [x] **Per-move response time + cumulative total time display** *(required for 4/28 demo)*
 - [x] Move notation output (e.g. `B:(3,5)-(2,4)`)
-- [ ] Initial board input (manual entry or text file)
+- [x] Initial board input (manual entry via New Game modal)
 
 ### Batch 4 — Web Interface
-- [ ] Flask server with board state API
-- [ ] Board rendering with piece icons
-- [ ] Click to select piece → highlight valid destination squares
-- [ ] Timer display (per-move elapsed + running total)
-- [ ] Move history log panel
+- [x] Flask server with board state API
+- [x] Board rendering with piece letters and bordered boxes
+- [x] Click to select piece → highlight valid destination squares
+- [x] Timer display (per-move elapsed + running total)
+- [x] Move history log panel
 
 ### Batch 5A — AI Core (Minimax + Alpha-Beta)
 
