@@ -320,3 +320,66 @@ move history recording	✅
 time tracking structure	✅
 
 All tests passed successfully.
+
+---
+
+Code Review & Fixes (2026-04-26)
+
+After code review, 5 issues were identified and corrected.
+
+Fix 1 — Relative import in src/game.py
+
+Problem:
+game.py used an absolute import: from src.board import Board
+This requires the project root to always be in sys.path, and breaks if game.py is run standalone or the package structure changes.
+
+Fix:
+Changed to relative import: from .board import Board
+Files changed: src/game.py line 3
+
+Fix 2 — make_move returned next round instead of current round
+
+Problem:
+make_move() called switch_turn() before building its return dict.
+switch_turn() increments round_counter when UV finishes a turn.
+Result: the returned "round" value reflected the NEXT round, not the round the move was played in. move_history was unaffected (it saved round before switch), but the API return value was wrong.
+
+Fix:
+Saved current_round = self.round_counter before calling switch_turn(), then used current_round in the return dict.
+Files changed: src/game.py make_move()
+
+Fix 3 — Timer auto-started on switch_turn(), including at Game creation
+
+Problem:
+switch_turn() automatically called start_turn_timer(), and __init__ also started the timer immediately. This caused setup time and human input delay to count as AI thinking time. The intended design is that the timer starts only when the AI begins computing (user presses the infer/think button).
+
+Fix:
+- Initialized turn_start_time = None in __init__ (not started)
+- switch_turn() now resets turn_start_time = None instead of calling start_turn_timer()
+- get_elapsed_time() returns 0.0 when turn_start_time is None
+- start_turn_timer() must now be called explicitly by the frontend when the user triggers AI inference
+Files changed: src/game.py __init__, switch_turn(), get_elapsed_time()
+
+Fix 4 — Test files in project root instead of tests/ directory
+
+Problem:
+test_board.py and test_game.py were placed in the project root, inconsistent with the README-specified tests/ directory. Deviations between documented structure and actual structure increase maintenance overhead and confuse new contributors.
+
+Fix:
+- Moved both files to tests/test_board.py and tests/test_game.py
+- Deleted root-level test files
+- Added conftest.py at project root to ensure pytest adds root to sys.path
+Files changed: tests/test_board.py, tests/test_game.py, conftest.py (new), root test files deleted
+
+Fix 5 — test_total_time_exists did not verify time accumulation
+
+Problem:
+The test only checked that "AB" and "UV" keys exist in game.total_time, which is trivially true from __init__ alone. The actual accumulation logic in make_move() was never exercised. The test would pass even if the accumulation line were deleted.
+
+Fix:
+Replaced with two meaningful tests:
+- test_total_time_accumulates_on_move: calls start_turn_timer(), makes a move, verifies move_time >= 0, total_time["AB"] == move_time, total_time["UV"] == 0
+- test_timer_not_started_returns_zero: verifies get_elapsed_time() returns 0.0 when start_turn_timer() has not been called
+Files changed: tests/test_game.py
+
+Result: 18 tests, 18 passed.

@@ -36,11 +36,17 @@ Then open `http://localhost:5000` in your browser.
 - **Input:** Mouse click on board
 - **Coordinate format:** `(row, col)` 0-indexed, e.g. `B:(3,5)-(2,4)`
 
+## Development Guidelines
+
+- **Imports inside `src/`:** always use relative imports (e.g. `from .board import Board`), never `from src.board import Board`
+- **Test files:** all tests go in `tests/`, never in the project root
+- **Run tests:** `.venv\Scripts\pytest tests/ -v` from project root
+
 ## Development Batches
 
 ### Batch 1 — Environment Setup
-- [ ] Virtual environment (`venv`), `.gitignore`, `requirements.txt`
-- [ ] Project folder structure (`src/`, `static/`, `templates/`)
+- [x] Virtual environment (`venv`), `.gitignore`, `requirements.txt`
+- [x] Project folder structure (`src/`, `static/`, `templates/`)
 
 ### Batch 2 — Board & Movement Core
 - [x] 8x8 board data structure and piece placement
