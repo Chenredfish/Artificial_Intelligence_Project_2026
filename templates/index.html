@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>EZChess</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Courier New', monospace;
+      background: #1e1e2e;
+      color: #cdd6f4;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 28px;
+      padding: 28px;
+      min-height: 100vh;
+    }
+
+    /* ── Board area ─────────────────────────── */
+
+    #board-wrap { flex-shrink: 0; user-select: none; }
+
+    #col-labels {
+      display: grid;
+      grid-template-columns: 24px repeat(8, 70px);
+      margin-bottom: 4px;
+    }
+    #col-labels span { text-align: center; font-size: 13px; color: #6c7086; }
+
+    #board-row { display: flex; gap: 0; }
+
+    #row-labels {
+      display: grid;
+      grid-template-rows: repeat(8, 70px);
+      width: 24px;
+    }
+    #row-labels span {
+      display: flex; align-items: center; justify-content: flex-end;
+      padding-right: 6px; font-size: 13px; color: #6c7086;
+    }
+
+    #board {
+      display: grid;
+      grid-template-columns: repeat(8, 70px);
+      grid-template-rows: repeat(8, 70px);
+      border: 2px solid #585b70;
+    }
+
+    .cell {
+      width: 70px; height: 70px;
+      border: 1px solid #45475a;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      position: relative;
+      transition: background 0.12s;
+    }
+    .cell.light { background: #2a2a3e; }
+    .cell.dark  { background: #1e1e2e; }
+    .cell:hover { background: #3a3a50 !important; }
+    .cell.selected { background: #4a3000 !important; outline: 2px solid #f9e2af; outline-offset: -2px; }
+
+    /* valid empty square: small green dot */
+    .cell.vm-empty::after {
+      content: '';
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: rgba(166, 227, 161, 0.55);
+      pointer-events: none;
+    }
+    /* valid capture square: green ring around the piece */
+    .cell.vm-capture { outline: 3px solid rgba(166, 227, 161, 0.75); outline-offset: -3px; }
+
+    /* piece box */
+    .piece {
+      width: 54px; height: 54px;
+      border: 2px solid;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; font-weight: bold;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .piece.ab { color: #89b4fa; border-color: #89b4fa; background: rgba(137,180,250,0.10); }
+    .piece.uv { color: #f38ba8; border-color: #f38ba8; background: rgba(243,139,168,0.10); }
+
+    /* ── Info panel ─────────────────────────── */
+
+    #info {
+      width: 260px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+
+    .card {
+      background: #313244;
+      border: 1px solid #45475a;
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+
+    .card-title {
+      font-size: 10px; text-transform: uppercase;
+      letter-spacing: 1.5px; color: #6c7086;
+      margin-bottom: 8px;
+    }
+
+    /* Turn card */
+    #team-name  { font-size: 22px; font-weight: bold; }
+    #turn-badge {
+      display: inline-block;
+      font-size: 12px; padding: 2px 8px;
+      border-radius: 12px; margin-left: 8px;
+      background: #45475a; color: #cdd6f4; vertical-align: middle;
+    }
+    #round-info { font-size: 13px; color: #6c7086; margin-top: 4px; }
+    #game-over-banner {
+      margin-top: 8px;
+      background: #f9e2af; color: #1e1e2e;
+      border-radius: 4px; padding: 5px 10px;
+      font-size: 13px; font-weight: bold;
+      display: none;
+    }
+
+    .team-ab { color: #89b4fa; }
+    .team-uv { color: #f38ba8; }
+
+    /* Timer card — all values in red per demo requirement */
+    .time-row {
+      display: flex; justify-content: space-between;
+      font-size: 13px; margin-bottom: 5px;
+    }
+    .time-row:last-child { margin-bottom: 0; }
+    .time-val { color: #f38ba8; font-weight: bold; }
+
+    /* Buttons */
+    .btn {
+      padding: 8px 14px;
+      border: none; border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px; font-weight: bold;
+      cursor: pointer; transition: opacity 0.15s;
+    }
+    .btn:hover:not(:disabled) { opacity: 0.80; }
+    .btn:disabled { opacity: 0.35; cursor: default; }
+    #btn-ai  { background: #a6e3a1; color: #1e1e2e; }
+    #btn-new { background: #6c7086; color: #cdd6f4; }
+    #btn-row { display: flex; gap: 8px; }
+
+    /* Move history */
+    #history-list {
+      max-height: 230px;
+      overflow-y: auto;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .h-item {
+      font-size: 12px; padding: 4px 6px;
+      border-radius: 4px; background: #1e1e2e;
+      line-height: 1.5;
+    }
+    .h-round { font-weight: bold; }
+    .h-time  { color: #f38ba8; }
+    .h-cap   { color: #f9e2af; }
+
+    /* ── New Game Modal ─────────────────────── */
+
+    #modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.78); z-index: 200;
+      align-items: center; justify-content: center;
+    }
+    #modal-overlay.open { display: flex; }
+
+    #modal-box {
+      background: #313244; border: 1px solid #585b70;
+      border-radius: 10px; padding: 24px; width: 370px;
+    }
+    #modal-box h3 { font-size: 16px; margin-bottom: 6px; }
+    #modal-desc   { font-size: 12px; color: #6c7086; margin-bottom: 12px; line-height: 1.5; }
+
+    #board-input {
+      width: 100%;
+      font-family: 'Courier New', monospace;
+      font-size: 19px; line-height: 1.55;
+      background: #1e1e2e; color: #cdd6f4;
+      border: 1px solid #585b70; border-radius: 6px;
+      padding: 8px; resize: none;
+    }
+    #modal-error { color: #f38ba8; font-size: 12px; min-height: 16px; margin-top: 6px; }
+    #modal-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+    #btn-sample  { background: #45475a; color: #cdd6f4; }
+    #btn-submit  { background: #a6e3a1; color: #1e1e2e; }
+    #btn-cancel  { background: #45475a; color: #cdd6f4; }
+  </style>
+</head>
+<body>
+
+<!-- Board -->
+<div id="board-wrap">
+  <div id="col-labels">
+    <span></span>
+    <span>0</span><span>1</span><span>2</span><span>3</span>
+    <span>4</span><span>5</span><span>6</span><span>7</span>
+  </div>
+  <div id="board-row">
+    <div id="row-labels">
+      <span>0</span><span>1</span><span>2</span><span>3</span>
+      <span>4</span><span>5</span><span>6</span><span>7</span>
+    </div>
+    <div id="board"></div>
+  </div>
+</div>
+
+<!-- Info panel -->
+<div id="info">
+
+  <div class="card">
+    <div class="card-title">Current Turn</div>
+    <div>
+      <span id="team-name" class="team-ab">AB</span>
+      <span id="turn-badge">先攻</span>
+    </div>
+    <div id="round-info">Round 1 / 20</div>
+    <div id="game-over-banner">Game Over — 20 rounds completed</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Response Time</div>
+    <div class="time-row"><span>This move</span><span class="time-val" id="t-move">— s</span></div>
+    <div class="time-row"><span>AB total</span>  <span class="time-val" id="t-ab">0.00 s</span></div>
+    <div class="time-row"><span>UV total</span>  <span class="time-val" id="t-uv">0.00 s</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Actions</div>
+    <div id="btn-row">
+      <button class="btn" id="btn-ai">Ask AI</button>
+      <button class="btn" id="btn-new">New Game</button>
+    </div>
+  </div>
+
+  <div class="card" style="flex:1">
+    <div class="card-title">Move History</div>
+    <div id="history-list"></div>
+  </div>
+
+</div>
+
+<!-- New Game Modal -->
+<div id="modal-overlay">
+  <div id="modal-box">
+    <h3>New Game — Set Initial Board</h3>
+    <p id="modal-desc">
+      Enter 8 lines × 8 chars. Use piece letters
+      <span class="team-ab">A B c d e f</span> /
+      <span class="team-uv">U V w x y z</span>
+      and <code>.</code> for empty squares.<br>
+      Leave blank to start with an empty board.
+    </p>
+    <textarea id="board-input" rows="8" spellcheck="false"
+      placeholder="........&#10;........&#10;........&#10;........&#10;........&#10;........&#10;........&#10;........"></textarea>
+    <div id="modal-error"></div>
+    <div id="modal-actions">
+      <button class="btn" id="btn-sample">Use Sample Board</button>
+      <button class="btn" id="btn-submit">Start Game</button>
+      <button class="btn" id="btn-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── constants ────────────────────────────────── */
+const AB_SET = new Set('ABcdef');
+const UV_SET = new Set('UVwxyz');
+
+const SAMPLE =
+`.UVwxyz.
+........
+........
+........
+........
+........
+........
+.ABcdef.`;
+
+/* ── app state ───────────────────────────────── */
+let state      = null;
+let selected   = null;   // [row, col] | null
+let validMoves = [];     // [[row, col], ...]
+let lastMove   = null;   // result object from /api/move or /api/ask_ai
+
+/* ── fetch helpers ───────────────────────────── */
+async function apiFetch(url) {
+  return (await fetch(url)).json();
+}
+async function apiPost(url, body) {
+  return (await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  })).json();
+}
+
+/* ── board render ────────────────────────────── */
+function renderBoard() {
+  const el = document.getElementById('board');
+  el.innerHTML = '';
+
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell ' + ((r + c) % 2 === 0 ? 'light' : 'dark');
+
+      const raw   = state.board[r][c];
+      const empty = raw === '.' || raw === null;
+
+      if (!empty) {
+        const p = document.createElement('div');
+        p.className = 'piece ' + (AB_SET.has(raw) ? 'ab' : 'uv');
+        p.textContent = raw;
+        cell.appendChild(p);
+      }
+
+      if (selected && selected[0] === r && selected[1] === c)
+        cell.classList.add('selected');
+
+      if (validMoves.some(([mr, mc]) => mr === r && mc === c))
+        cell.classList.add(empty ? 'vm-empty' : 'vm-capture');
+
+      cell.addEventListener('click', () => onCellClick(r, c));
+      el.appendChild(cell);
+    }
+  }
+}
+
+/* ── info panel ──────────────────────────────── */
+function updatePanel() {
+  const team = state.current_team;
+  document.getElementById('team-name').textContent  = team;
+  document.getElementById('team-name').className    = 'team-' + team.toLowerCase();
+  document.getElementById('turn-badge').textContent = team === 'AB' ? '先攻' : '後攻';
+  document.getElementById('round-info').textContent =
+    'Round ' + state.round + ' / ' + state.max_rounds;
+
+  const moveDisplay = lastMove != null
+    ? lastMove.move_time.toFixed(2) + ' s'
+    : '— s';
+  document.getElementById('t-move').textContent = moveDisplay;
+  document.getElementById('t-ab').textContent   = (state.total_time.AB ?? 0).toFixed(2) + ' s';
+  document.getElementById('t-uv').textContent   = (state.total_time.UV ?? 0).toFixed(2) + ' s';
+
+  document.getElementById('game-over-banner').style.display =
+    state.game_over ? 'block' : 'none';
+  document.getElementById('btn-ai').disabled = state.game_over;
+}
+
+function addHistoryEntry(result) {
+  const list = document.getElementById('history-list');
+  const item = document.createElement('div');
+  item.className = 'h-item';
+  const teamCls = result.team === 'AB' ? 'team-ab' : 'team-uv';
+  const capStr  = result.captured
+    ? ` <span class="h-cap">×${result.captured}</span>`
+    : '';
+  item.innerHTML =
+    `<span class="h-round ${teamCls}">R${result.round} [${result.team}]</span> ` +
+    `${result.move} ` +
+    `<span class="h-time">${result.move_time.toFixed(2)}s</span>` +
+    capStr;
+  list.insertBefore(item, list.firstChild);
+}
+
+/* ── cell click ──────────────────────────────── */
+async function onCellClick(r, c) {
+  if (!state || state.game_over) return;
+
+  // clicking a highlighted destination → execute move
+  if (selected && validMoves.some(([mr, mc]) => mr === r && mc === c)) {
+    await doMove(selected, [r, c]);
+    return;
+  }
+
+  const raw   = state.board[r][c];
+  const empty = raw === '.' || raw === null;
+  const team  = state.current_team;
+  const isOwn = !empty && (
+    (team === 'AB' && AB_SET.has(raw)) ||
+    (team === 'UV' && UV_SET.has(raw))
+  );
+
+  if (isOwn) {
+    selected = [r, c];
+    const data = await apiFetch(`/api/legal_moves?row=${r}&col=${c}`);
+    validMoves = data.moves ?? [];
+  } else {
+    selected = null;
+    validMoves = [];
+  }
+  renderBoard();
+}
+
+async function doMove(fromPos, toPos) {
+  const data = await apiPost('/api/move', { from_pos: fromPos, to_pos: toPos });
+  if (!data.ok) { alert('Move error: ' + data.error); return; }
+  applyMoveResult(data);
+}
+
+function applyMoveResult(data) {
+  lastMove   = data;
+  state      = data.state;
+  selected   = null;
+  validMoves = [];
+  renderBoard();
+  updatePanel();
+  addHistoryEntry(data);
+}
+
+/* ── Ask AI button ───────────────────────────── */
+document.getElementById('btn-ai').addEventListener('click', async () => {
+  if (!state || state.game_over) return;
+  selected = null; validMoves = [];
+  document.getElementById('btn-ai').disabled = true;
+  const data = await apiPost('/api/ask_ai');
+  if (!data.ok) {
+    alert('AI error: ' + data.error);
+    document.getElementById('btn-ai').disabled = false;
+    return;
+  }
+  applyMoveResult(data);
+});
+
+/* ── New Game modal ──────────────────────────── */
+document.getElementById('btn-new').addEventListener('click', () => {
+  document.getElementById('modal-error').textContent = '';
+  document.getElementById('board-input').value = '';
+  document.getElementById('modal-overlay').classList.add('open');
+});
+document.getElementById('btn-cancel').addEventListener('click', closeModal);
+document.getElementById('btn-sample').addEventListener('click', () => {
+  document.getElementById('board-input').value = SAMPLE;
+  document.getElementById('modal-error').textContent = '';
+});
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+document.getElementById('btn-submit').addEventListener('click', async () => {
+  const raw = document.getElementById('board-input').value.trim();
+  let grid = null;
+
+  if (raw) {
+    const lines = raw.split('\n').map(l => l.trimEnd());
+    if (lines.length !== 8 || lines.some(l => l.length !== 8)) {
+      document.getElementById('modal-error').textContent =
+        'Must be exactly 8 lines of 8 characters.';
+      return;
+    }
+    grid = lines.map(line =>
+      line.split('').map(ch => (ch === '.' ? null : ch))
+    );
+  }
+
+  const data = await apiPost('/api/new_game', { grid });
+  if (!data.ok) {
+    document.getElementById('modal-error').textContent = data.error;
+    return;
+  }
+  lastMove = null;
+  state    = data.state;
+  selected = null; validMoves = [];
+  document.getElementById('history-list').innerHTML = '';
+  renderBoard(); updatePanel(); closeModal();
+});
+
+/* ── init ────────────────────────────────────── */
+(async () => {
+  state = await apiFetch('/api/state');
+  renderBoard();
+  updatePanel();
+})();
+</script>
+</body>
+</html>
