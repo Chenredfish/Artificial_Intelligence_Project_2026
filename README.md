@@ -24,7 +24,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # Run the web server
-python src/app.py
+python run.py
 ```
 
 Then open `http://localhost:5000` in your browser.

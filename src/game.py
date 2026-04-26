@@ -60,9 +60,10 @@ class Game:
         notation = Board.format_move(piece, from_pos, to_pos)
 
         current_round = self.round_counter  # save before switch_turn may increment it
+        current_team  = self.current_team   # save before switch_turn changes it
 
         self.move_history.append({
-            "team": self.current_team,
+            "team": current_team,
             "round": current_round,
             "move": notation,
             "move_time": elapsed,
@@ -73,6 +74,7 @@ class Game:
         self.switch_turn()
 
         return {
+            "team": current_team,
             "move": notation,
             "move_time": elapsed,
             "total_time": self.total_time,
