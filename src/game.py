@@ -1,6 +1,6 @@
 import time
 
-from src.board import Board
+from .board import Board  # relative import — always use within src/
 
 
 class Game:
@@ -14,10 +14,10 @@ class Game:
 
         self.total_time = {
             "AB": 0.0,
-            "UV": 0.0
+            "UV": 0.0,
         }
 
-        self.turn_start_time = time.time()
+        self.turn_start_time = None  # not started; call start_turn_timer() explicitly
 
     def get_current_team(self):
         return self.current_team
@@ -26,9 +26,12 @@ class Game:
         return self.round_counter
 
     def start_turn_timer(self):
+        """Call this when the AI begins computing (e.g. user presses the infer button)."""
         self.turn_start_time = time.time()
 
     def get_elapsed_time(self):
+        if self.turn_start_time is None:
+            return 0.0
         return time.time() - self.turn_start_time
 
     def switch_turn(self):
@@ -38,7 +41,7 @@ class Game:
             self.current_team = "AB"
             self.round_counter += 1
 
-        self.start_turn_timer()
+        self.turn_start_time = None  # reset; frontend must call start_turn_timer() again
 
     def make_move(self, from_pos, to_pos):
         if self.is_game_over():
@@ -54,16 +57,17 @@ class Game:
         self.total_time[self.current_team] += elapsed
 
         captured = self.board.apply_move(from_pos, to_pos)
-
         notation = Board.format_move(piece, from_pos, to_pos)
+
+        current_round = self.round_counter  # save before switch_turn may increment it
 
         self.move_history.append({
             "team": self.current_team,
-            "round": self.round_counter,
+            "round": current_round,
             "move": notation,
             "move_time": elapsed,
             "total_time": self.total_time[self.current_team],
-            "captured": captured
+            "captured": captured,
         })
 
         self.switch_turn()
@@ -74,7 +78,7 @@ class Game:
             "total_time": self.total_time,
             "captured": captured,
             "next_team": self.current_team,
-            "round": self.round_counter
+            "round": current_round,  # the round this move was played in, not the next
         }
 
     def is_game_over(self):
@@ -89,5 +93,5 @@ class Game:
             "elapsed_time": self.get_elapsed_time(),
             "total_time": self.total_time,
             "move_history": self.move_history,
-            "game_over": self.is_game_over()
+            "game_over": self.is_game_over(),
         }
