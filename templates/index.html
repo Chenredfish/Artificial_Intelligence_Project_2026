@@ -145,6 +145,7 @@
     .btn:disabled { opacity: 0.35; cursor: default; }
     #btn-ai  { background: #a6e3a1; color: #1e1e2e; }
     #btn-new { background: #6c7086; color: #cdd6f4; }
+    #btn-confirm-ai { background: #f9e2af; color: #1e1e2e; }
     #btn-row { display: flex; gap: 8px; }
 
     /* Move history */
@@ -236,7 +237,17 @@
     <div class="card-title">Actions</div>
     <div id="btn-row">
       <button class="btn" id="btn-ai">Ask AI</button>
+      <button class="btn" id="btn-confirm-ai" disabled>Use AI Move</button>
       <button class="btn" id="btn-new">New Game</button>
+    </div>
+
+    <label style="font-size:12px; margin-top:8px; display:block;">
+      <input type="checkbox" id="auto-ai-toggle" checked>
+      Auto apply AI move
+    </label>
+
+    <div id="ai-suggestion" style="font-size:12px; margin-top:8px; color:#f9e2af;">
+      AI suggestion: —
     </div>
   </div>
 
@@ -289,6 +300,7 @@ let state      = null;
 let selected   = null;   // [row, col] | null
 let validMoves = [];     // [[row, col], ...]
 let lastMove   = null;   // result object from /api/move or /api/ask_ai
+let pendingAiMove = null;
 
 /* ── fetch helpers ───────────────────────────── */
 async function apiFetch(url) {
@@ -419,14 +431,77 @@ function applyMoveResult(data) {
 /* ── Ask AI button ───────────────────────────── */
 document.getElementById('btn-ai').addEventListener('click', async () => {
   if (!state || state.game_over) return;
-  selected = null; validMoves = [];
+
+  selected = null;
+  validMoves = [];
+  pendingAiMove = null;
+
   document.getElementById('btn-ai').disabled = true;
-  const data = await apiPost('/api/ask_ai');
+  document.getElementById('btn-confirm-ai').disabled = true;
+  document.getElementById('ai-suggestion').textContent = 'AI thinking...';
+
+  const autoApply = document.getElementById('auto-ai-toggle').checked;
+
+  const data = await apiPost('/api/ask_ai', {
+    auto_apply: autoApply
+  });
+
   if (!data.ok) {
     alert('AI error: ' + data.error);
     document.getElementById('btn-ai').disabled = false;
+    document.getElementById('ai-suggestion').textContent = 'AI suggestion: —';
     return;
   }
+
+  // 開關 ON：AI 直接下棋
+  if (!data.suggestion_only) {
+    applyMoveResult(data);
+    document.getElementById('ai-suggestion').textContent =
+      'AI moved: ' + data.move;
+    return;
+  }
+
+  // 開關 OFF：只顯示建議，不移動
+  pendingAiMove = {
+    from_pos: data.from_pos,
+    to_pos: data.to_pos,
+    move: data.move
+  };
+
+  document.getElementById('ai-suggestion').textContent =
+    'AI suggestion: ' + data.move;
+
+  document.getElementById('btn-confirm-ai').disabled = false;
+
+  // 高亮 AI 建議步
+  selected = data.from_pos;
+  validMoves = [data.to_pos];
+  renderBoard();
+
+  document.getElementById('btn-ai').disabled = false;
+});
+
+document.getElementById('btn-confirm-ai').addEventListener('click', async () => {
+  if (!pendingAiMove) {
+    alert('No AI suggestion available.');
+    return;
+  }
+
+  const data = await apiPost('/api/apply_ai_suggestion', {
+    from_pos: pendingAiMove.from_pos,
+    to_pos: pendingAiMove.to_pos
+  });
+
+  if (!data.ok) {
+    alert('AI move error: ' + data.error);
+    return;
+  }
+
+  pendingAiMove = null;
+  document.getElementById('btn-confirm-ai').disabled = true;
+  document.getElementById('ai-suggestion').textContent =
+    'AI move used: ' + data.move;
+
   applyMoveResult(data);
 });
 
@@ -468,8 +543,12 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
     return;
   }
   lastMove = null;
+  pendingAiMove = null;
   state    = data.state;
   selected = null; validMoves = [];
+
+  document.getElementById('btn-confirm-ai').disabled = true;
+  document.getElementById('ai-suggestion').textContent = 'AI suggestion: —';
   document.getElementById('history-list').innerHTML = '';
   renderBoard(); updatePanel(); closeModal();
 });

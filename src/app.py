@@ -61,11 +61,47 @@ def api_start_timer():
 
 @app.route('/api/ask_ai', methods=['POST'])
 def api_ask_ai():
+    data = request.get_json() or {}
+    auto_apply = data.get('auto_apply', True)
+
     _game.start_turn_timer()
+
     moves = _game.board.all_legal_moves(_game.current_team)
     if not moves:
         return jsonify({'ok': False, 'error': 'No legal moves available'}), 400
+
     from_pos, to_pos = random.choice(moves)
+    piece = _game.board.get(from_pos[0], from_pos[1])
+    notation = Board.format_move(piece, from_pos, to_pos)
+
+    # 開關關閉：只回傳 AI 建議，不移動棋子
+    if not auto_apply:
+        return jsonify({
+            'ok': True,
+            'suggestion_only': True,
+            'from_pos': from_pos,
+            'to_pos': to_pos,
+            'piece': piece,
+            'move': notation,
+            'state': _game.get_state()
+        })
+
+    # 開關開啟：維持原本功能，AI 直接下棋
+    try:
+        result = _game.make_move(from_pos, to_pos)
+        result['state'] = _game.get_state()
+        result['suggestion_only'] = False
+        return jsonify({'ok': True, **result})
+    except ValueError as e:
+        return jsonify({'ok': False, 'error': str(e)}), 400
+
+
+@app.route('/api/apply_ai_suggestion', methods=['POST'])
+def api_apply_ai_suggestion():
+    data = request.get_json()
+    from_pos = tuple(data['from_pos'])
+    to_pos = tuple(data['to_pos'])
+
     try:
         result = _game.make_move(from_pos, to_pos)
         result['state'] = _game.get_state()
