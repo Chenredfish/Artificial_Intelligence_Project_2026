@@ -77,9 +77,9 @@ Then open `http://localhost:5000` in your browser.
 
 Layered implementation — each level is independently deployable and stronger than the previous.
 
-- [ ] **L1** Random legal move (demo baseline)
-- [ ] **L2** Greedy — prioritise highest-value capture; else random
-- [ ] **L3** Minimax search, depth 2–3
+- [X] **L1** Random legal move (demo baseline)
+- [X] **L2** Greedy — prioritise highest-value capture; else random
+- [X] **L3** Minimax search, depth 2–3
 - [ ] **L4** Alpha-Beta pruning (same strength as L3, searches ~2× deeper in same time)
 - [ ] **L5** Iterative Deepening — fills the full 60 s budget, returns best move found so far
 - [ ] **L6** Move ordering + Transposition table (dramatically improves Alpha-Beta efficiency)
