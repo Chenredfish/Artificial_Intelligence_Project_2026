@@ -90,7 +90,7 @@ Layered implementation — each level is independently deployable and stronger t
 
 ### Batch 5B — AI Benchmarking (prerequisite for both 5A tuning and 5C)
 
-- [ ] AI vs AI battle mode: two AI agents play a full game automatically
+- [X] AI vs AI battle mode: two AI agents play a full game automatically
 - [ ] Batch simulation: run N games between two AI versions, report win rate and avg score
 - [ ] Intra-team testing: play human or earlier AI version against current build to measure improvement
 
