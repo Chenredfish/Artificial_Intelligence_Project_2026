@@ -190,6 +190,7 @@
     #modal-error { color: #f38ba8; font-size: 12px; min-height: 16px; margin-top: 6px; }
     #modal-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 
+    #btn-random  { background: #89b4fa; color: #1e1e2e; }
     #btn-sample  { background: #45475a; color: #cdd6f4; }
     #btn-submit  { background: #a6e3a1; color: #1e1e2e; }
     #btn-cancel  { background: #45475a; color: #cdd6f4; }
@@ -251,6 +252,22 @@
     </div>
   </div>
 
+  <div class="card">
+    <div class="card-title">AI Battle (AB first, 20 rounds)</div>
+    <div id="battle-actions" style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn" id="btn-ai-battle">Run AI Battle</button>
+    </div>
+    <div id="battle-result" style="font-size:12px; margin-top:8px; color:#cdd6af;">
+      AI battle result: —
+    </div>
+    <div id="battle-paths" style="font-size:12px; margin-top:8px;">
+      <div><strong>AB moves</strong></div>
+      <div id="battle-ab-path" style="white-space: pre-wrap; margin-left: 8px; min-height: 18px;"></div>
+      <div style="margin-top:8px;"><strong>UV moves</strong></div>
+      <div id="battle-uv-path" style="white-space: pre-wrap; margin-left: 8px; min-height: 18px;"></div>
+    </div>
+  </div>
+
   <div class="card" style="flex:1">
     <div class="card-title">Move History</div>
     <div id="history-list"></div>
@@ -273,6 +290,7 @@
       placeholder="........&#10;........&#10;........&#10;........&#10;........&#10;........&#10;........&#10;........"></textarea>
     <div id="modal-error"></div>
     <div id="modal-actions">
+      <button class="btn" id="btn-random">Random Board</button>
       <button class="btn" id="btn-sample">Use Sample Board</button>
       <button class="btn" id="btn-submit">Start Game</button>
       <button class="btn" id="btn-cancel">Cancel</button>
@@ -294,6 +312,30 @@ const SAMPLE =
 ........
 ........
 .ABcdef.`;
+
+const RANDOM_PIECES = ['A','B','c','d','e','f','U','V','w','x','y','z'];
+function generateRandomBoard() {
+  const allPositions = [];
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      allPositions.push([r, c]);
+    }
+  }
+
+  // shuffle positions and place each piece exactly once
+  for (let i = allPositions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [allPositions[i], allPositions[j]] = [allPositions[j], allPositions[i]];
+  }
+
+  const grid = Array.from({ length: 8 }, () => Array(8).fill('.'));
+  for (let i = 0; i < RANDOM_PIECES.length; i++) {
+    const [r, c] = allPositions[i];
+    grid[r][c] = RANDOM_PIECES[i];
+  }
+
+  return grid.map(row => row.join('')).join('\n');
+}
 
 /* ── app state ───────────────────────────────── */
 let state      = null;
@@ -481,6 +523,37 @@ document.getElementById('btn-ai').addEventListener('click', async () => {
   document.getElementById('btn-ai').disabled = false;
 });
 
+document.getElementById('btn-ai-battle').addEventListener('click', async () => {
+  if (!state) return;
+
+  document.getElementById('btn-ai-battle').disabled = true;
+  document.getElementById('battle-result').textContent = 'AI battle running...';
+  document.getElementById('battle-ab-path').textContent = '';
+  document.getElementById('battle-uv-path').textContent = '';
+
+  const data = await apiPost('/api/ai_battle', {});
+
+  document.getElementById('btn-ai-battle').disabled = false;
+
+  if (!data.ok) {
+    document.getElementById('battle-result').textContent = 'AI battle failed: ' + data.error;
+    return;
+  }
+
+  state = data.state;
+  selected = null;
+  validMoves = [];
+  renderBoard();
+  updatePanel();
+
+  const winner = data.winner === 'draw' ? 'Draw' : data.winner + ' wins';
+  document.getElementById('battle-result').textContent =
+    `20 rounds complete. ${winner}. AB score ${data.ab_score}, UV score ${data.uv_score}. ${data.l3_team} is L3, ${data.l2_team} is L2.`;
+
+  document.getElementById('battle-ab-path').textContent = data.ab_moves.join('\n');
+  document.getElementById('battle-uv-path').textContent = data.uv_moves.join('\n');
+});
+
 document.getElementById('btn-confirm-ai').addEventListener('click', async () => {
   if (!pendingAiMove) {
     alert('No AI suggestion available.');
@@ -512,6 +585,10 @@ document.getElementById('btn-new').addEventListener('click', () => {
   document.getElementById('modal-overlay').classList.add('open');
 });
 document.getElementById('btn-cancel').addEventListener('click', closeModal);
+document.getElementById('btn-random').addEventListener('click', () => {
+  document.getElementById('board-input').value = generateRandomBoard();
+  document.getElementById('modal-error').textContent = '';
+});
 document.getElementById('btn-sample').addEventListener('click', () => {
   document.getElementById('board-input').value = SAMPLE;
   document.getElementById('modal-error').textContent = '';
