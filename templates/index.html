@@ -419,10 +419,13 @@ async function doMove(fromPos, toPos) {
 }
 
 function applyMoveResult(data) {
-  lastMove   = data;
-  state      = data.state;
-  selected   = null;
-  validMoves = [];
+  lastMove      = data;
+  state         = data.state;
+  selected      = null;
+  validMoves    = [];
+  pendingAiMove = null;
+  document.getElementById('btn-confirm-ai').disabled = true;
+  document.getElementById('ai-suggestion').textContent = 'AI suggestion: —';
   renderBoard();
   updatePanel();
   addHistoryEntry(data);
@@ -463,9 +466,10 @@ document.getElementById('btn-ai').addEventListener('click', async () => {
 
   // 開關 OFF：只顯示建議，不移動
   pendingAiMove = {
-    from_pos: data.from_pos,
-    to_pos: data.to_pos,
-    move: data.move
+    from_pos:   data.from_pos,
+    to_pos:     data.to_pos,
+    move:       data.move,
+    ai_elapsed: data.ai_elapsed  // 帶回給 apply_ai_suggestion，確保 timer 正確
   };
 
   document.getElementById('ai-suggestion').textContent =
@@ -488,8 +492,9 @@ document.getElementById('btn-confirm-ai').addEventListener('click', async () => 
   }
 
   const data = await apiPost('/api/apply_ai_suggestion', {
-    from_pos: pendingAiMove.from_pos,
-    to_pos: pendingAiMove.to_pos
+    from_pos:   pendingAiMove.from_pos,
+    to_pos:     pendingAiMove.to_pos,
+    ai_elapsed: pendingAiMove.ai_elapsed
   });
 
   if (!data.ok) {

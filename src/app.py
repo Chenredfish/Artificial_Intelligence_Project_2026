@@ -1,5 +1,6 @@
 import os
 import random
+import time
 
 from flask import Flask, jsonify, request, render_template
 
@@ -76,6 +77,10 @@ def api_ask_ai():
 
     # 開關關閉：只回傳 AI 建議，不移動棋子
     if not auto_apply:
+        # 記錄 AI 真正的計算耗時，然後立刻停止 timer
+        # 這樣人類決策時間不會被計入 move_time
+        ai_elapsed = _game.get_elapsed_time()
+        _game.turn_start_time = None
         return jsonify({
             'ok': True,
             'suggestion_only': True,
@@ -83,6 +88,7 @@ def api_ask_ai():
             'to_pos': to_pos,
             'piece': piece,
             'move': notation,
+            'ai_elapsed': ai_elapsed,
             'state': _game.get_state()
         })
 
@@ -99,14 +105,19 @@ def api_ask_ai():
 @app.route('/api/apply_ai_suggestion', methods=['POST'])
 def api_apply_ai_suggestion():
     data = request.get_json()
-    from_pos = tuple(data['from_pos'])
-    to_pos = tuple(data['to_pos'])
+    from_pos   = tuple(data['from_pos'])
+    to_pos     = tuple(data['to_pos'])
+    ai_elapsed = float(data.get('ai_elapsed', 0.0))
+
+    # 用前端傳來的 AI 計算時間重建 timer，確保 move_time 只計 AI 思考耗時
+    _game.turn_start_time = time.time() - ai_elapsed
 
     try:
         result = _game.make_move(from_pos, to_pos)
         result['state'] = _game.get_state()
         return jsonify({'ok': True, **result})
     except ValueError as e:
+        _game.turn_start_time = None
         return jsonify({'ok': False, 'error': str(e)}), 400
 
 
