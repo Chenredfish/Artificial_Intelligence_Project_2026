@@ -8,7 +8,7 @@ class Game:
         self.board = board if board is not None else Board()
         self.current_team = "AB"
         self.round_counter = 1
-        self.max_rounds = 20
+        self.max_rounds = 40
 
         self.move_history = []
 
