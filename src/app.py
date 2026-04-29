@@ -6,7 +6,7 @@ from collections import defaultdict
 from flask import Flask, jsonify, request, render_template
 
 from .game import Game
-from .board import Board, PIECE_POINTS, get_team
+from .board import Board, PIECE_POINTS, get_team, _PIECE_RULES
 
 
 class SearchTimeout(Exception):
@@ -67,48 +67,47 @@ def api_start_timer():
 
 MINIMAX_DEPTH = 7
 
-# 評估函式：L7 版本，包含材料、位置、行動力、威脅評估
+# 評估函式：更細緻的 L7 版本，包含棋種價值差異、位置、中心控制、行動力與攻防交換
+EVAL_PIECE_WEIGHTS = {
+    'A': 10, 'U': 10,
+    'B': 8,  'V': 8,
+    'c': 4,  'w': 4,
+    'd': 4,  'x': 4,
+    'e': 3,  'y': 3,
+    'f': 3,  'z': 3,
+}
+
 PIECE_PST_TYPE = {
     'A': 'A', 'U': 'A',
     'B': 'B', 'V': 'B',
-    'c': 'c', 'w': 'c',
-    'd': 'd', 'x': 'd',
-    'e': 'e', 'y': 'e',
-    'f': 'f', 'z': 'f',
+    'c': 'P', 'w': 'P',
+    'd': 'Q', 'x': 'Q',
+    'e': 'R', 'y': 'R',
+    'f': 'S', 'z': 'S',
 }
 
 PIECE_SQUARE_TABLES = {
     'A': [
         [0,  0,  0,  0,  0,  0,  0,  0],
-        [0,  1,  1,  1,  1,  1,  1,  0],
         [0,  1,  2,  2,  2,  2,  1,  0],
-        [0,  1,  2,  3,  3,  2,  1,  0],
-        [0,  1,  2,  3,  3,  2,  1,  0],
+        [0,  2,  4,  4,  4,  4,  2,  0],
+        [0,  2,  4,  6,  6,  4,  2,  0],
+        [0,  2,  4,  6,  6,  4,  2,  0],
+        [0,  2,  4,  4,  4,  4,  2,  0],
         [0,  1,  2,  2,  2,  2,  1,  0],
-        [0,  1,  1,  1,  1,  1,  1,  0],
         [0,  0,  0,  0,  0,  0,  0,  0],
     ],
     'B': [
-        [0,  0,  1,  1,  1,  1,  0,  0],
-        [0,  1,  2,  2,  2,  2,  1,  0],
-        [1,  2,  3,  3,  3,  3,  2,  1],
+        [0,  0,  1,  2,  2,  1,  0,  0],
+        [0,  1,  2,  3,  3,  2,  1,  0],
         [1,  2,  3,  4,  4,  3,  2,  1],
+        [2,  3,  4,  5,  5,  4,  3,  2],
+        [2,  3,  4,  5,  5,  4,  3,  2],
         [1,  2,  3,  4,  4,  3,  2,  1],
-        [1,  2,  3,  3,  3,  3,  2,  1],
-        [0,  1,  2,  2,  2,  2,  1,  0],
-        [0,  0,  1,  1,  1,  1,  0,  0],
-    ],
-    'c': [
-        [0,  0,  0,  0,  0,  0,  0,  0],
-        [0,  1,  1,  1,  1,  1,  1,  0],
-        [0,  1,  2,  2,  2,  2,  1,  0],
         [0,  1,  2,  3,  3,  2,  1,  0],
-        [0,  1,  2,  3,  3,  2,  1,  0],
-        [0,  1,  2,  2,  2,  2,  1,  0],
-        [0,  1,  1,  1,  1,  1,  1,  0],
-        [0,  0,  0,  0,  0,  0,  0,  0],
+        [0,  0,  1,  2,  2,  1,  0,  0],
     ],
-    'd': [
+    'P': [
         [0,  0,  0,  0,  0,  0,  0,  0],
         [0,  1,  1,  1,  1,  1,  1,  0],
         [0,  1,  2,  2,  2,  2,  1,  0],
@@ -118,9 +117,19 @@ PIECE_SQUARE_TABLES = {
         [0,  1,  1,  1,  1,  1,  1,  0],
         [0,  0,  0,  0,  0,  0,  0,  0],
     ],
-    'e': [
+    'Q': [
+        [0,  0,  0,  0,  0,  0,  0,  0],
+        [0,  1,  1,  1,  1,  1,  1,  0],
+        [0,  1,  2,  2,  2,  2,  1,  0],
+        [0,  1,  2,  3,  3,  2,  1,  0],
+        [0,  1,  2,  3,  3,  2,  1,  0],
+        [0,  1,  2,  2,  2,  2,  1,  0],
+        [0,  1,  1,  1,  1,  1,  1,  0],
+        [0,  0,  0,  0,  0,  0,  0,  0],
+    ],
+    'R': [
         [0,  0,  0,  1,  1,  0,  0,  0],
-        [0,  1,  1,  2,  2,  1,  1,  0],
+        [0,  1,  2,  2,  2,  2,  1,  0],
         [0,  1,  2,  3,  3,  2,  1,  0],
         [1,  2,  3,  4,  4,  3,  2,  1],
         [1,  2,  3,  4,  4,  3,  2,  1],
@@ -128,7 +137,7 @@ PIECE_SQUARE_TABLES = {
         [0,  1,  1,  2,  2,  1,  1,  0],
         [0,  0,  0,  1,  1,  0,  0,  0],
     ],
-    'f': [
+    'S': [
         [0,  0,  0,  1,  1,  0,  0,  0],
         [0,  1,  1,  2,  2,  1,  1,  0],
         [0,  1,  2,  3,  3,  2,  1,  0],
@@ -141,6 +150,12 @@ PIECE_SQUARE_TABLES = {
 }
 
 CENTER_SQUARES = {(3, 3), (3, 4), (4, 3), (4, 4)}
+NEAR_CENTER_SQUARES = {
+    (2, 2), (2, 3), (2, 4), (2, 5),
+    (3, 2), (3, 5),
+    (4, 2), (4, 5),
+    (5, 2), (5, 3), (5, 4), (5, 5),
+}
 
 
 def piece_square_value(piece, row, col):
@@ -149,6 +164,11 @@ def piece_square_value(piece, row, col):
         return 0
     table = PIECE_SQUARE_TABLES[base_type]
     return table[row][col]
+
+
+def game_phase(board):
+    total_pieces = sum(1 for r in range(8) for c in range(8) if board.get(r, c) is not None)
+    return max(0.0, min(1.0, total_pieces / 24.0))
 
 
 def move_counts(board, team):
@@ -171,27 +191,120 @@ def attack_map(board, team):
     return counts
 
 
-def mobility_score(board, maximizing_team):
-    opponent = 'UV' if maximizing_team == 'AB' else 'AB'
-    own_moves, own_captures, _ = move_counts(board, maximizing_team)
-    opp_moves, opp_captures, _ = move_counts(board, opponent)
-    return 0.08 * (own_moves - opp_moves) + 0.24 * (own_captures - opp_captures)
+def influence_map(board, team):
+    from collections import defaultdict
+    counts = defaultdict(int)
+    for r, c, piece in board.pieces(team):
+        directions, max_steps = _PIECE_RULES[piece]
+        for dr, dc in directions:
+            for step in range(1, max_steps + 1):
+                nr, nc = r + dr * step, c + dc * step
+                if not (0 <= nr < 8 and 0 <= nc < 8):
+                    break
+                counts[(nr, nc)] += 1
+                if board.get(nr, nc) is not None:
+                    break
+    return counts
 
 
-def threatened_score(board, maximizing_team):
+def static_exchange_score(board, maximizing_team):
     opponent = 'UV' if maximizing_team == 'AB' else 'AB'
     own_attacks = attack_map(board, maximizing_team)
     opp_attacks = attack_map(board, opponent)
+    own_support = attack_map(board, maximizing_team)
+    opp_support = attack_map(board, opponent)
 
     score = 0
     for r, c, piece in board.pieces(maximizing_team):
         attack_count = opp_attacks.get((r, c), 0)
         if attack_count:
-            score -= PIECE_POINTS[piece] * min(attack_count, 3) * 0.28
+            defense = own_support.get((r, c), 0)
+            penalty = EVAL_PIECE_WEIGHTS[piece] * (0.26 * min(attack_count, 3) - 0.12 * min(defense, 3))
+            if (r, c) in CENTER_SQUARES:
+                penalty *= 1.12
+            if len(board.legal_moves(r, c)) == 0:
+                penalty *= 1.2
+            score -= max(0, penalty)
+
     for r, c, piece in board.pieces(opponent):
         attack_count = own_attacks.get((r, c), 0)
         if attack_count:
-            score += PIECE_POINTS[piece] * min(attack_count, 3) * 0.22
+            defense = opp_support.get((r, c), 0)
+            bonus = EVAL_PIECE_WEIGHTS[piece] * (0.22 * min(attack_count, 3) - 0.14 * min(defense, 3))
+            if (r, c) in CENTER_SQUARES:
+                bonus *= 1.1
+            if len(board.legal_moves(r, c)) == 0:
+                bonus *= 1.15
+            score += max(0, bonus)
+
+    return score
+
+
+def mobility_score(board, maximizing_team):
+    opponent = 'UV' if maximizing_team == 'AB' else 'AB'
+    own_moves, own_captures, own_non_capture = move_counts(board, maximizing_team)
+    opp_moves, opp_captures, opp_non_capture = move_counts(board, opponent)
+    piece_weights = {
+        'A': 1.0, 'U': 1.0,
+        'B': 0.9, 'V': 0.9,
+        'c': 0.6, 'w': 0.6,
+        'd': 0.6, 'x': 0.6,
+        'e': 0.5, 'y': 0.5,
+        'f': 0.5, 'z': 0.5,
+    }
+    mobility_value = 0
+    for r, c, piece in board.pieces(maximizing_team):
+        mobility_value += len(board.legal_moves(r, c)) * piece_weights[piece]
+    opp_value = 0
+    for r, c, piece in board.pieces(opponent):
+        opp_value += len(board.legal_moves(r, c)) * piece_weights[piece]
+    score = 0.09 * (mobility_value - opp_value)
+    score += 0.24 * (own_captures - opp_captures)
+    score += 0.08 * (own_non_capture - opp_non_capture)
+    return score
+
+
+def control_score(board, maximizing_team):
+    opponent = 'UV' if maximizing_team == 'AB' else 'AB'
+    own_influence = influence_map(board, maximizing_team)
+    opp_influence = influence_map(board, opponent)
+
+    score = 0
+    for square, count in own_influence.items():
+        piece = board.get(square[0], square[1])
+        if piece is None:
+            score += 0.015 * count
+        elif get_team(piece) == opponent:
+            score += 0.1 * min(count, 3)
+    for square, count in opp_influence.items():
+        piece = board.get(square[0], square[1])
+        if piece is None:
+            score -= 0.01 * count
+        elif get_team(piece) == maximizing_team:
+            score -= 0.12 * min(count, 3)
+    return score
+
+
+def threatened_score(board, maximizing_team):
+    opponent = 'UV' if maximizing_team == 'AB' else 'AB'
+    own_influence = influence_map(board, maximizing_team)
+    opp_influence = influence_map(board, opponent)
+
+    score = 0
+    for r, c, piece in board.pieces(maximizing_team):
+        attack_count = opp_influence.get((r, c), 0)
+        if attack_count:
+            penalty = EVAL_PIECE_WEIGHTS[piece] * min(attack_count, 3) * 0.28
+            if (r, c) in CENTER_SQUARES:
+                penalty *= 1.10
+            score -= penalty
+    for r, c, piece in board.pieces(opponent):
+        attack_count = own_influence.get((r, c), 0)
+        if attack_count:
+            bonus = EVAL_PIECE_WEIGHTS[piece] * min(attack_count, 3) * 0.20
+            if (r, c) in CENTER_SQUARES:
+                bonus *= 1.05
+            score += bonus
     return score
 
 
@@ -199,36 +312,43 @@ def activity_score(board, maximizing_team):
     opponent = 'UV' if maximizing_team == 'AB' else 'AB'
     own_moves, own_captures, own_non_capture = move_counts(board, maximizing_team)
     opp_moves, opp_captures, opp_non_capture = move_counts(board, opponent)
-    score = 0.05 * (own_moves - opp_moves)
+    score = 0.02 * (own_moves - opp_moves)
     score += 0.18 * (own_captures - opp_captures)
-    score += 0.1 * ((own_non_capture - opp_non_capture) / 2)
+    score += 0.07 * (own_non_capture - opp_non_capture)
     return score
 
 
 def evaluate_board(board, maximizing_team):
     score = 0
     opponent = 'UV' if maximizing_team == 'AB' else 'AB'
+    phase = game_phase(board)
 
     for r in range(8):
         for c in range(8):
             piece = board.get(r, c)
             if piece is None:
                 continue
-            material = PIECE_POINTS[piece]
+            material = EVAL_PIECE_WEIGHTS[piece]
             pst = piece_square_value(piece, r, c)
             piece_value = material + 0.35 * pst
             if get_team(piece) == maximizing_team:
                 score += piece_value
                 if (r, c) in CENTER_SQUARES:
-                    score += 0.12
+                    score += 0.20
+                elif (r, c) in NEAR_CENTER_SQUARES:
+                    score += 0.09
             else:
                 score -= piece_value
                 if (r, c) in CENTER_SQUARES:
-                    score -= 0.12
+                    score -= 0.20
+                elif (r, c) in NEAR_CENTER_SQUARES:
+                    score -= 0.09
 
-    score += mobility_score(board, maximizing_team)
-    score += activity_score(board, maximizing_team)
+    score += mobility_score(board, maximizing_team) * (0.40 + 0.50 * phase)
+    score += activity_score(board, maximizing_team) * (0.20 + 0.20 * phase)
+    score += control_score(board, maximizing_team)
     score += threatened_score(board, maximizing_team)
+    score += static_exchange_score(board, maximizing_team)
     return score
 
 
