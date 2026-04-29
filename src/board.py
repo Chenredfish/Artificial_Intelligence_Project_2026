@@ -1,4 +1,5 @@
 import re
+import random
 
 AB_PIECES = frozenset('ABcdef')
 UV_PIECES = frozenset('UVwxyz')
@@ -54,6 +55,22 @@ class Board:
                     raise ValueError(f"Invalid piece at ({r},{c}): {cell}")
 
         return board
+
+    @classmethod
+    def random_legal_board(cls, max_attempts=2000):
+        pieces = list('ABcdef') + list('UVwxyz')
+        all_positions = [(r, c) for r in range(8) for c in range(8)]
+
+        for _ in range(max_attempts):
+            board = cls()
+            chosen_positions = random.sample(all_positions, len(pieces))
+            for piece, pos in zip(pieces, chosen_positions):
+                board.set(pos[0], pos[1], piece)
+
+            if board.all_legal_moves('AB') and board.all_legal_moves('UV'):
+                return board
+
+        raise RuntimeError('Unable to generate a legal random board after many attempts')
 
     def copy(self):
         new = Board()

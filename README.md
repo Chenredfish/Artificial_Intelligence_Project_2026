@@ -80,9 +80,9 @@ Layered implementation — each level is independently deployable and stronger t
 - [X] **L1** Random legal move (demo baseline)
 - [X] **L2** Greedy — prioritise highest-value capture; else random
 - [X] **L3** Minimax search, depth 2–3
-- [ ] **L4** Alpha-Beta pruning (same strength as L3, searches ~2× deeper in same time)
-- [ ] **L5** Iterative Deepening — fills the full 60 s budget, returns best move found so far
-- [ ] **L6** Move ordering + Transposition table (dramatically improves Alpha-Beta efficiency)
+- [X] **L4** Alpha-Beta pruning (same strength as L3, searches ~2× deeper in same time)
+- [X] **L5** Iterative Deepening — fills the full 60 s budget, returns best move found so far
+- [X] **L6** Move ordering + Transposition table (dramatically improves Alpha-Beta efficiency)
 - [ ] **L7** Evaluation function tuning: piece-square tables, mobility score, threat assessment
 
 > **Evaluation function components (L3+):** material value (A/B/U/V=3, others=1),
