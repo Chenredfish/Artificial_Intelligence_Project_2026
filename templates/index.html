@@ -224,6 +224,11 @@
       <span id="turn-badge">先攻</span>
     </div>
     <div id="round-info">Round 1 / 20</div>
+    <div id="score-info" style="margin-top:6px; font-size:13px;">
+      獵殺：<span id="score-ab" class="team-ab">AB 0 pts</span>
+      &nbsp;|&nbsp;
+      <span id="score-uv" class="team-uv">UV 0 pts</span>
+    </div>
     <div id="game-over-banner">Game Over — 20 rounds completed</div>
   </div>
 
@@ -420,6 +425,10 @@ function updatePanel() {
   document.getElementById('t-move').textContent = moveDisplay;
   document.getElementById('t-ab').textContent   = (state.total_time.AB ?? 0).toFixed(2) + ' s';
   document.getElementById('t-uv').textContent   = (state.total_time.UV ?? 0).toFixed(2) + ' s';
+
+  const sc = state.capture_score || {AB: 0, UV: 0};
+  document.getElementById('score-ab').textContent = 'AB ' + sc.AB + ' pts';
+  document.getElementById('score-uv').textContent = 'UV ' + sc.UV + ' pts';
 
   document.getElementById('game-over-banner').style.display =
     state.game_over ? 'block' : 'none';
