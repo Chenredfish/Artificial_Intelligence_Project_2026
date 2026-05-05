@@ -1,6 +1,6 @@
 import time
 
-from .board import Board  # relative import — always use within src/
+from .board import Board, PIECE_POINTS  # relative import — always use within src/
 
 
 class Game:
@@ -8,9 +8,11 @@ class Game:
         self.board = board if board is not None else Board()
         self.current_team = "AB"
         self.round_counter = 1
-        self.max_rounds = 40
+        self.max_rounds = 20
 
         self.move_history = []
+
+        self.capture_score = {"AB": 0, "UV": 0}
 
         self.total_time = {
             "AB": 0.0,
@@ -62,6 +64,9 @@ class Game:
         current_round = self.round_counter  # save before switch_turn may increment it
         current_team  = self.current_team   # save before switch_turn changes it
 
+        if captured:
+            self.capture_score[current_team] += PIECE_POINTS.get(captured, 0)
+
         self.move_history.append({
             "team": current_team,
             "round": current_round,
@@ -96,4 +101,5 @@ class Game:
             "total_time": self.total_time,
             "move_history": self.move_history,
             "game_over": self.is_game_over(),
+            "capture_score": self.capture_score,
         }
