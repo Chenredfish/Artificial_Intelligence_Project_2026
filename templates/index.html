@@ -307,7 +307,14 @@
       <label id="battle-uv-nmp-wrap"><input type="checkbox" id="battle-uv-nmp" checked> NMP</label>
     </div>
     <div class="battle-row">
-      <label>場次 <input id="battle-games" type="number" min="1" max="50" value="5"></label>
+      <label>先手
+        <select id="battle-first-team">
+          <option value="random" selected>隨機</option>
+          <option value="AB">AB</option>
+          <option value="UV">UV</option>
+        </select>
+      </label>
+      <label>場次 <input id="battle-games" type="number" min="1" max="200" value="10"></label>
       <label>時限(s) <input id="battle-time-limit" type="number" min="0" step="1" value="60"></label>
       <button class="btn" id="btn-ai-battle" style="padding:6px 10px;">Run</button>
     </div>
@@ -319,7 +326,7 @@
       <div style="max-height:160px; overflow-y:auto; margin-top:4px;">
         <table class="battle-table">
           <thead>
-            <tr><th>#</th><th>勝者</th><th>AB</th><th>UV</th><th>回合</th></tr>
+            <tr><th>#</th><th>先</th><th>勝者</th><th>AB</th><th>UV</th><th>回合</th></tr>
           </thead>
           <tbody id="battle-game-tbody"></tbody>
         </table>
@@ -623,9 +630,10 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   const uvStrategy = document.getElementById('battle-uv-strategy').value;
   const abDepth  = parseInt(document.getElementById('battle-ab-depth').value, 10) || 4;
   const uvDepth  = parseInt(document.getElementById('battle-uv-depth').value, 10) || 4;
-  const abNmp    = document.getElementById('battle-ab-nmp').checked;
-  const uvNmp    = document.getElementById('battle-uv-nmp').checked;
-  const games    = parseInt(document.getElementById('battle-games').value, 10) || 5;
+  const abNmp     = document.getElementById('battle-ab-nmp').checked;
+  const uvNmp     = document.getElementById('battle-uv-nmp').checked;
+  const firstTeam = document.getElementById('battle-first-team').value;
+  const games     = parseInt(document.getElementById('battle-games').value, 10) || 10;
   const timeLimit = parseFloat(document.getElementById('battle-time-limit').value);
 
   const data = await apiPost('/api/ai_battle', {
@@ -635,6 +643,7 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
     uv_depth: uvDepth,
     ab_nmp: abNmp,
     uv_nmp: uvNmp,
+    first_team: firstTeam,
     games,
     time_limit: Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : 0,
   });
@@ -658,8 +667,9 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   const abLabel = fmtStrategy(abStrategy, data.ab_depth, data.ab_nmp);
   const uvLabel = fmtStrategy(uvStrategy, data.uv_depth, data.uv_nmp);
 
+  const ftLabel = data.first_team === 'random' ? '隨機' : data.first_team + '先手';
   document.getElementById('battle-stats-text').innerHTML =
-    `<span class="team-ab">AB</span> ${abLabel} vs <span class="team-uv">UV</span> ${uvLabel}<br>` +
+    `<span class="team-ab">AB</span> ${abLabel} vs <span class="team-uv">UV</span> ${uvLabel}　先手：${ftLabel}<br>` +
     `${data.games} 局 — AB勝 <strong>${data.ab_wins}</strong> / UV勝 <strong>${data.uv_wins}</strong> / 平 <strong>${data.draws}</strong><br>` +
     `勝率：<span class="team-ab">AB ${data.ab_win_rate}%</span> ` +
     `/ <span class="team-uv">UV ${data.uv_win_rate}%</span> / 平 ${data.draw_rate}%<br>` +
@@ -671,7 +681,7 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   for (const g of (data.game_log || [])) {
     const tr = document.createElement('tr');
     tr.className = g.winner === 'AB' ? 'ab-win' : g.winner === 'UV' ? 'uv-win' : 'draw-row';
-    tr.innerHTML = `<td>${g.game}</td><td>${g.winner === 'draw' ? '平' : g.winner}</td>` +
+    tr.innerHTML = `<td>${g.game}</td><td>${g.first_team||'?'}</td><td>${g.winner === 'draw' ? '平' : g.winner}</td>` +
                    `<td>${g.ab_score}</td><td>${g.uv_score}</td><td>${g.rounds}</td>`;
     tbody.appendChild(tr);
   }

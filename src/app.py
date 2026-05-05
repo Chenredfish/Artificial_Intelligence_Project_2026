@@ -582,41 +582,44 @@ def choose_move_by_strategy(board, team, strategy, depth=MINIMAX_DEPTH, time_lim
     return choose_minimax_move(board, team, depth=depth, time_limit=time_limit, use_nmp=use_nmp)
 
 
-def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True):
+def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, first_team='random'):
     board = Board.random_legal_board()
     game = Game(board=board)
-    game.current_team = 'AB'
+    actual_first = random.choice(['AB', 'UV']) if first_team == 'random' else first_team
+    second = 'UV' if actual_first == 'AB' else 'AB'
+    game.current_team = actual_first
     game.turn_start_time = None
 
     ab_moves = []
     uv_moves = []
     ab_score = 0
     uv_score = 0
+    round_number = 1
 
     for round_number in range(1, rounds + 1):
-        ab_move = None
-        game.current_team = 'AB'
-        if game.board.all_legal_moves('AB'):
-            move = choose_move_by_strategy(game.board, 'AB', ab_strategy, ab_depth, time_limit, use_nmp=ab_nmp)
+        any_move = False
+        for team in (actual_first, second):
+            if game.is_game_over():
+                break
+            game.current_team = team
+            if not game.board.all_legal_moves(team):
+                continue
+            strategy = ab_strategy if team == 'AB' else uv_strategy
+            depth    = ab_depth    if team == 'AB' else uv_depth
+            nmp      = ab_nmp      if team == 'AB' else uv_nmp
+            move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp)
             if move is not None:
                 from_pos, to_pos = move
                 result = game.make_move(from_pos, to_pos)
-                ab_score += PIECE_POINTS.get(result['captured'], 0) if result['captured'] is not None else 0
-                ab_moves.append(f"R{round_number} AB: {result['move']}")
-                ab_move = result
-
-        uv_move = None
-        game.current_team = 'UV'
-        if game.board.all_legal_moves('UV'):
-            move = choose_move_by_strategy(game.board, 'UV', uv_strategy, uv_depth, time_limit, use_nmp=uv_nmp)
-            if move is not None:
-                from_pos, to_pos = move
-                result = game.make_move(from_pos, to_pos)
-                uv_score += PIECE_POINTS.get(result['captured'], 0) if result['captured'] is not None else 0
-                uv_moves.append(f"R{round_number} UV: {result['move']}")
-                uv_move = result
-
-        if ab_move is None and uv_move is None:
+                gain = PIECE_POINTS.get(result['captured'], 0) if result['captured'] else 0
+                if team == 'AB':
+                    ab_score += gain
+                    ab_moves.append(f"R{round_number} AB: {result['move']}")
+                else:
+                    uv_score += gain
+                    uv_moves.append(f"R{round_number} UV: {result['move']}")
+                any_move = True
+        if not any_move:
             break
 
     if ab_score > uv_score:
@@ -634,10 +637,11 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
         'ab_moves': ab_moves,
         'uv_moves': uv_moves,
         'state': game.get_state(),
+        'first_team': actual_first,
     }
 
 
-def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True):
+def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, first_team='random'):
     results = {
         'games': games,
         'ab_wins': 0,
@@ -652,6 +656,7 @@ def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10,
         'uv_strategy': uv_strategy,
         'ab_nmp': ab_nmp,
         'uv_nmp': uv_nmp,
+        'first_team': first_team,
         'time_limit': time_limit,
     }
 
@@ -662,7 +667,7 @@ def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10,
     total_rounds = 0
 
     for i in range(games):
-        game_result = play_ai_battle_game(ab_depth, uv_depth, rounds=rounds, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp)
+        game_result = play_ai_battle_game(ab_depth, uv_depth, rounds=rounds, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp, first_team=first_team)
         if game_result['winner'] == 'AB':
             results['ab_wins'] += 1
         elif game_result['winner'] == 'UV':
@@ -678,6 +683,7 @@ def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10,
             'ab_score': game_result['ab_score'],
             'uv_score': game_result['uv_score'],
             'rounds': game_result['rounds'],
+            'first_team': game_result['first_team'],
         })
         last_result = game_result
 
@@ -786,8 +792,11 @@ def api_ai_battle():
 
     ab_nmp = bool(data.get('ab_nmp', True))
     uv_nmp = bool(data.get('uv_nmp', True))
+    first_team = data.get('first_team', 'random')
+    if first_team not in {'AB', 'UV', 'random'}:
+        return jsonify({'ok': False, 'error': 'first_team must be AB, UV, or random.'}), 400
 
-    result = simulate_ai_battle(ab_depth=ab_depth, uv_depth=uv_depth, games=games, rounds=20, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp)
+    result = simulate_ai_battle(ab_depth=ab_depth, uv_depth=uv_depth, games=games, rounds=20, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp, first_team=first_team)
     return jsonify({'ok': True, **result})
 
 
