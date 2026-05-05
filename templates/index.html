@@ -293,7 +293,7 @@
         </select>
       </label>
       <label id="battle-ab-depth-wrap">d=<input id="battle-ab-depth" type="number" min="1" max="50" value="50"></label>
-      <label id="battle-ab-nmp-wrap"><input type="checkbox" id="battle-ab-nmp" checked> NMP</label>
+      <label id="battle-ab-nmp-wrap"><input type="checkbox" id="battle-ab-nmp" checked> NMP R=<input id="battle-ab-nmp-r" type="number" min="1" max="4" value="2" style="width:36px;"></label>
     </div>
     <div class="battle-row">
       <label>UV
@@ -304,7 +304,7 @@
         </select>
       </label>
       <label id="battle-uv-depth-wrap">d=<input id="battle-uv-depth" type="number" min="1" max="50" value="50"></label>
-      <label id="battle-uv-nmp-wrap"><input type="checkbox" id="battle-uv-nmp" checked> NMP</label>
+      <label id="battle-uv-nmp-wrap"><input type="checkbox" id="battle-uv-nmp" checked> NMP R=<input id="battle-uv-nmp-r" type="number" min="1" max="4" value="2" style="width:36px;"></label>
     </div>
     <div class="battle-row">
       <label>先手
@@ -632,6 +632,8 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   const uvDepth  = parseInt(document.getElementById('battle-uv-depth').value, 10) || 4;
   const abNmp     = document.getElementById('battle-ab-nmp').checked;
   const uvNmp     = document.getElementById('battle-uv-nmp').checked;
+  const abNmpR    = parseInt(document.getElementById('battle-ab-nmp-r').value, 10) || 2;
+  const uvNmpR    = parseInt(document.getElementById('battle-uv-nmp-r').value, 10) || 2;
   const firstTeam = document.getElementById('battle-first-team').value;
   const games     = parseInt(document.getElementById('battle-games').value, 10) || 10;
   const timeLimit = parseFloat(document.getElementById('battle-time-limit').value);
@@ -643,6 +645,8 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
     uv_depth: uvDepth,
     ab_nmp: abNmp,
     uv_nmp: uvNmp,
+    ab_nmp_r: abNmpR,
+    uv_nmp_r: uvNmpR,
     first_team: firstTeam,
     games,
     time_limit: Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : 0,
@@ -661,11 +665,11 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   renderBoard();
   updatePanel();
 
-  const fmtStrategy = (s, depth, nmp) =>
+  const fmtStrategy = (s, depth, nmp, nmpr) =>
     (s === 'minimax' ? `Minimax(d${depth})` : s.charAt(0).toUpperCase() + s.slice(1)) +
-    (s === 'minimax' && nmp ? '+NMP' : '');
-  const abLabel = fmtStrategy(abStrategy, data.ab_depth, data.ab_nmp);
-  const uvLabel = fmtStrategy(uvStrategy, data.uv_depth, data.uv_nmp);
+    (s === 'minimax' && nmp ? `+NMP(R${nmpr})` : '');
+  const abLabel = fmtStrategy(abStrategy, data.ab_depth, data.ab_nmp, data.ab_nmp_r);
+  const uvLabel = fmtStrategy(uvStrategy, data.uv_depth, data.uv_nmp, data.uv_nmp_r);
 
   const ftLabel = data.first_team === 'random' ? '隨機' : data.first_team + '先手';
   document.getElementById('battle-stats-text').innerHTML =

@@ -66,7 +66,7 @@ def api_start_timer():
 
 
 MINIMAX_DEPTH = 5
-NMP_R = 2  # null move reduction factor (skip own turn, search at depth-1-R)
+DEFAULT_NMP_R = 2  # null move reduction factor default
 
 # 評估函式：更細緻的 L7 版本，包含棋種價值差異、位置、中心控制、行動力與攻防交換
 EVAL_PIECE_WEIGHTS = {
@@ -406,7 +406,7 @@ def quiescence_search(board, team, maximizing_team, alpha, beta, start_time=None
     return alpha
 
 
-def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float('inf'), start_time=None, time_limit=None, transposition_table=None, history_heuristic=None, allow_null=True):
+def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float('inf'), start_time=None, time_limit=None, transposition_table=None, history_heuristic=None, allow_null=True, nmp_r=DEFAULT_NMP_R):
     if time_limit is not None and start_time is not None:
         if time.time() - start_time >= time_limit:
             raise SearchTimeout()
@@ -436,14 +436,14 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
     alpha_orig, beta_orig = alpha, beta
 
     # Null Move Pruning — MAX nodes only, depth≥3, Zugzwang guard (own pieces > 2)
-    if allow_null and depth >= 3 and team == maximizing_team:
+    if allow_null and depth >= nmp_r + 1 and team == maximizing_team:
         own_count = sum(1 for r in range(8) for c in range(8)
                         if board.get(r, c) is not None and get_team(board.get(r, c)) == team)
         if own_count > 2:
             try:
-                null_val = minimax(board, opponent, depth - 1 - NMP_R, maximizing_team,
+                null_val = minimax(board, opponent, depth - 1 - nmp_r, maximizing_team,
                                    alpha, beta, start_time, time_limit,
-                                   transposition_table, history_heuristic, allow_null=False)
+                                   transposition_table, history_heuristic, allow_null=False, nmp_r=nmp_r)
                 if null_val >= beta:
                     return beta
             except SearchTimeout:
@@ -457,7 +457,7 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
                 raise SearchTimeout()
             child = board.copy()
             child.apply_move(from_pos, to_pos)
-            value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, start_time, time_limit, transposition_table, history_heuristic, allow_null=allow_null)
+            value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, start_time, time_limit, transposition_table, history_heuristic, allow_null=allow_null, nmp_r=nmp_r)
             if value > best:
                 best = value
                 best_move = (from_pos, to_pos)
@@ -474,7 +474,7 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
                 raise SearchTimeout()
             child = board.copy()
             child.apply_move(from_pos, to_pos)
-            value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, start_time, time_limit, transposition_table, history_heuristic, allow_null=allow_null)
+            value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, start_time, time_limit, transposition_table, history_heuristic, allow_null=allow_null, nmp_r=nmp_r)
             if value < best:
                 best = value
                 best_move = (from_pos, to_pos)
@@ -501,7 +501,7 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
     return best
 
 
-def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True):
+def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R):
     moves = board.all_legal_moves(team)
     if not moves:
         return None
@@ -531,7 +531,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
                     raise SearchTimeout()
                 child = board.copy()
                 child.apply_move(from_pos, to_pos)
-                value = minimax(child, opponent, current_depth - 1, team, -float('inf'), float('inf'), start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp)
+                value = minimax(child, opponent, current_depth - 1, team, -float('inf'), float('inf'), start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp, nmp_r=nmp_r)
                 if value > best_value:
                     best_value = value
                     current_moves = [(from_pos, to_pos)]
@@ -573,16 +573,16 @@ def choose_greedy_move(board, team):
     return random.choice(moves)
 
 
-def choose_move_by_strategy(board, team, strategy, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True):
+def choose_move_by_strategy(board, team, strategy, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R):
     if strategy == 'random':
         moves = board.all_legal_moves(team)
         return random.choice(moves) if moves else None
     if strategy == 'greedy':
         return choose_greedy_move(board, team)
-    return choose_minimax_move(board, team, depth=depth, time_limit=time_limit, use_nmp=use_nmp)
+    return choose_minimax_move(board, team, depth=depth, time_limit=time_limit, use_nmp=use_nmp, nmp_r=nmp_r)
 
 
-def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, first_team='random'):
+def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random'):
     board = Board.random_legal_board()
     game = Game(board=board)
     actual_first = random.choice(['AB', 'UV']) if first_team == 'random' else first_team
@@ -607,7 +607,8 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
             strategy = ab_strategy if team == 'AB' else uv_strategy
             depth    = ab_depth    if team == 'AB' else uv_depth
             nmp      = ab_nmp      if team == 'AB' else uv_nmp
-            move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp)
+            nmp_r_val = ab_nmp_r   if team == 'AB' else uv_nmp_r
+            move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp, nmp_r=nmp_r_val)
             if move is not None:
                 from_pos, to_pos = move
                 result = game.make_move(from_pos, to_pos)
@@ -641,7 +642,7 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
     }
 
 
-def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, first_team='random'):
+def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random'):
     results = {
         'games': games,
         'ab_wins': 0,
@@ -656,6 +657,8 @@ def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10,
         'uv_strategy': uv_strategy,
         'ab_nmp': ab_nmp,
         'uv_nmp': uv_nmp,
+        'ab_nmp_r': ab_nmp_r,
+        'uv_nmp_r': uv_nmp_r,
         'first_team': first_team,
         'time_limit': time_limit,
     }
@@ -667,7 +670,7 @@ def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10,
     total_rounds = 0
 
     for i in range(games):
-        game_result = play_ai_battle_game(ab_depth, uv_depth, rounds=rounds, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp, first_team=first_team)
+        game_result = play_ai_battle_game(ab_depth, uv_depth, rounds=rounds, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp, ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r, first_team=first_team)
         if game_result['winner'] == 'AB':
             results['ab_wins'] += 1
         elif game_result['winner'] == 'UV':
@@ -792,11 +795,16 @@ def api_ai_battle():
 
     ab_nmp = bool(data.get('ab_nmp', True))
     uv_nmp = bool(data.get('uv_nmp', True))
+    try:
+        ab_nmp_r = max(1, min(int(data.get('ab_nmp_r', DEFAULT_NMP_R)), 4))
+        uv_nmp_r = max(1, min(int(data.get('uv_nmp_r', DEFAULT_NMP_R)), 4))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error': 'nmp_r must be a number.'}), 400
     first_team = data.get('first_team', 'random')
     if first_team not in {'AB', 'UV', 'random'}:
         return jsonify({'ok': False, 'error': 'first_team must be AB, UV, or random.'}), 400
 
-    result = simulate_ai_battle(ab_depth=ab_depth, uv_depth=uv_depth, games=games, rounds=20, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp, first_team=first_team)
+    result = simulate_ai_battle(ab_depth=ab_depth, uv_depth=uv_depth, games=games, rounds=20, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp, ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r, first_team=first_team)
     return jsonify({'ok': True, **result})
 
 
