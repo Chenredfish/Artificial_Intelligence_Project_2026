@@ -3,7 +3,8 @@ import random
 import time
 from collections import defaultdict
 
-from flask import Flask, jsonify, request, render_template
+import json
+from flask import Flask, jsonify, request, render_template, Response, stream_with_context
 
 from .game import Game
 from .board import Board, PIECE_POINTS, get_team, _PIECE_RULES
@@ -785,8 +786,8 @@ def api_ai_battle():
     max_depth = 50 if (time_limit and time_limit > 0) else 8
     ab_depth = max(1, min(ab_depth, max_depth))
     uv_depth = max(1, min(uv_depth, max_depth))
-    if games < 1 or games > 50:
-        return jsonify({'ok': False, 'error': 'Game count must be between 1 and 50.'}), 400
+    if games < 1 or games > 200:
+        return jsonify({'ok': False, 'error': 'Game count must be between 1 and 200.'}), 400
 
     ab_strategy = data.get('ab_strategy', 'minimax')
     uv_strategy = data.get('uv_strategy', 'minimax')
@@ -804,8 +805,75 @@ def api_ai_battle():
     if first_team not in {'AB', 'UV', 'random'}:
         return jsonify({'ok': False, 'error': 'first_team must be AB, UV, or random.'}), 400
 
-    result = simulate_ai_battle(ab_depth=ab_depth, uv_depth=uv_depth, games=games, rounds=20, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp, ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r, first_team=first_team)
-    return jsonify({'ok': True, **result})
+    def generate():
+        ab_wins = uv_wins = draws = 0
+        ab_total = uv_total = total_rounds = 0
+        game_log = []
+        last_gr = None
+
+        for i in range(games):
+            gr = play_ai_battle_game(
+                ab_depth, uv_depth, rounds=20, time_limit=time_limit,
+                ab_strategy=ab_strategy, uv_strategy=uv_strategy,
+                ab_nmp=ab_nmp, uv_nmp=uv_nmp,
+                ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r,
+                first_team=first_team,
+            )
+            if gr['winner'] == 'AB':
+                ab_wins += 1
+            elif gr['winner'] == 'UV':
+                uv_wins += 1
+            else:
+                draws += 1
+            ab_total += gr['ab_score']
+            uv_total += gr['uv_score']
+            total_rounds += gr['rounds']
+            entry = {
+                'game': i + 1, 'winner': gr['winner'],
+                'ab_score': gr['ab_score'], 'uv_score': gr['uv_score'],
+                'rounds': gr['rounds'], 'first_team': gr['first_team'],
+            }
+            game_log.append(entry)
+            last_gr = gr
+            yield json.dumps({
+                'type': 'progress',
+                'game': i + 1, 'total': games,
+                'ab_wins': ab_wins, 'uv_wins': uv_wins, 'draws': draws,
+                **entry,
+            }) + '\n'
+
+        n = games
+        summary = {
+            'type': 'done', 'ok': True,
+            'games': n,
+            'ab_wins': ab_wins, 'uv_wins': uv_wins, 'draws': draws,
+            'ab_win_rate':  round(ab_wins / n * 100, 1),
+            'uv_win_rate':  round(uv_wins / n * 100, 1),
+            'draw_rate':    round(draws   / n * 100, 1),
+            'avg_ab_score': round(ab_total / n, 1),
+            'avg_uv_score': round(uv_total / n, 1),
+            'avg_rounds':   round(total_rounds / n, 1),
+            'ab_depth': ab_depth, 'uv_depth': uv_depth,
+            'ab_strategy': ab_strategy, 'uv_strategy': uv_strategy,
+            'ab_nmp': ab_nmp, 'uv_nmp': uv_nmp,
+            'ab_nmp_r': ab_nmp_r, 'uv_nmp_r': uv_nmp_r,
+            'first_team': first_team,
+            'game_log': game_log,
+        }
+        if last_gr:
+            summary.update({
+                'rounds': last_gr['rounds'], 'winner': last_gr['winner'],
+                'ab_score': last_gr['ab_score'], 'uv_score': last_gr['uv_score'],
+                'ab_moves': last_gr['ab_moves'], 'uv_moves': last_gr['uv_moves'],
+                'state': last_gr['state'],
+            })
+        yield json.dumps(summary) + '\n'
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='application/x-ndjson',
+        headers={'X-Accel-Buffering': 'no', 'Cache-Control': 'no-cache'},
+    )
 
 
 @app.route('/api/apply_ai_suggestion', methods=['POST'])
