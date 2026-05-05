@@ -558,7 +558,16 @@ def choose_greedy_move(board, team):
     return random.choice(moves)
 
 
-def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None):
+def choose_move_by_strategy(board, team, strategy, depth=MINIMAX_DEPTH, time_limit=None):
+    if strategy == 'random':
+        moves = board.all_legal_moves(team)
+        return random.choice(moves) if moves else None
+    if strategy == 'greedy':
+        return choose_greedy_move(board, team)
+    return choose_minimax_move(board, team, depth=depth, time_limit=time_limit)
+
+
+def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax'):
     board = Board.random_legal_board()
     game = Game(board=board)
     game.current_team = 'AB'
@@ -573,7 +582,7 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None):
         ab_move = None
         game.current_team = 'AB'
         if game.board.all_legal_moves('AB'):
-            move = choose_minimax_move(game.board, 'AB', depth=ab_depth, time_limit=time_limit)
+            move = choose_move_by_strategy(game.board, 'AB', ab_strategy, ab_depth, time_limit)
             if move is not None:
                 from_pos, to_pos = move
                 result = game.make_move(from_pos, to_pos)
@@ -584,7 +593,7 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None):
         uv_move = None
         game.current_team = 'UV'
         if game.board.all_legal_moves('UV'):
-            move = choose_minimax_move(game.board, 'UV', depth=uv_depth, time_limit=time_limit)
+            move = choose_move_by_strategy(game.board, 'UV', uv_strategy, uv_depth, time_limit)
             if move is not None:
                 from_pos, to_pos = move
                 result = game.make_move(from_pos, to_pos)
@@ -613,7 +622,7 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None):
     }
 
 
-def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10, rounds=20, time_limit=None):
+def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax'):
     results = {
         'games': games,
         'ab_wins': 0,
@@ -624,24 +633,50 @@ def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10,
         'draw_rate': 0.0,
         'ab_depth': ab_depth,
         'uv_depth': uv_depth,
+        'ab_strategy': ab_strategy,
+        'uv_strategy': uv_strategy,
         'time_limit': time_limit,
     }
 
     last_result = None
-    for _ in range(games):
-        game_result = play_ai_battle_game(ab_depth, uv_depth, rounds=rounds, time_limit=time_limit)
+    game_log = []
+    ab_total_score = 0
+    uv_total_score = 0
+    total_rounds = 0
+
+    for i in range(games):
+        game_result = play_ai_battle_game(ab_depth, uv_depth, rounds=rounds, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy)
         if game_result['winner'] == 'AB':
             results['ab_wins'] += 1
         elif game_result['winner'] == 'UV':
             results['uv_wins'] += 1
         else:
             results['draws'] += 1
+        ab_total_score += game_result['ab_score']
+        uv_total_score += game_result['uv_score']
+        total_rounds += game_result['rounds']
+        game_log.append({
+            'game': i + 1,
+            'winner': game_result['winner'],
+            'ab_score': game_result['ab_score'],
+            'uv_score': game_result['uv_score'],
+            'rounds': game_result['rounds'],
+        })
         last_result = game_result
 
     if games > 0:
         results['ab_win_rate'] = round(results['ab_wins'] / games * 100, 1)
         results['uv_win_rate'] = round(results['uv_wins'] / games * 100, 1)
         results['draw_rate'] = round(results['draws'] / games * 100, 1)
+        results['avg_ab_score'] = round(ab_total_score / games, 1)
+        results['avg_uv_score'] = round(uv_total_score / games, 1)
+        results['avg_rounds'] = round(total_rounds / games, 1)
+    else:
+        results['avg_ab_score'] = 0.0
+        results['avg_uv_score'] = 0.0
+        results['avg_rounds'] = 0.0
+
+    results['game_log'] = game_log
 
     if last_result is not None:
         results.update({
@@ -725,7 +760,12 @@ def api_ai_battle():
     if games < 1 or games > 50:
         return jsonify({'ok': False, 'error': 'Game count must be between 1 and 50.'}), 400
 
-    result = simulate_ai_battle(ab_depth=ab_depth, uv_depth=uv_depth, games=games, rounds=20, time_limit=time_limit)
+    ab_strategy = data.get('ab_strategy', 'minimax')
+    uv_strategy = data.get('uv_strategy', 'minimax')
+    if ab_strategy not in {'random', 'greedy', 'minimax'} or uv_strategy not in {'random', 'greedy', 'minimax'}:
+        return jsonify({'ok': False, 'error': 'Strategy must be random, greedy, or minimax.'}), 400
+
+    result = simulate_ai_battle(ab_depth=ab_depth, uv_depth=uv_depth, games=games, rounds=20, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy)
     return jsonify({'ok': True, **result})
 
 
