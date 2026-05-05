@@ -184,7 +184,6 @@ def move_counts(board, team):
 
 
 def attack_map(board, team):
-    from collections import defaultdict
     counts = defaultdict(int)
     for _, dest in board.all_legal_moves(team):
         counts[dest] += 1
@@ -192,7 +191,6 @@ def attack_map(board, team):
 
 
 def influence_map(board, team):
-    from collections import defaultdict
     counts = defaultdict(int)
     for r, c, piece in board.pieces(team):
         directions, max_steps = _PIECE_RULES[piece]
@@ -722,8 +720,10 @@ def api_ai_battle():
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error': 'Depth, game count, and time limit must be numbers.'}), 400
 
-    if games < 1:
-        return jsonify({'ok': False, 'error': 'Game count must be at least 1.'}), 400
+    ab_depth = max(1, min(ab_depth, 8))
+    uv_depth = max(1, min(uv_depth, 8))
+    if games < 1 or games > 50:
+        return jsonify({'ok': False, 'error': 'Game count must be between 1 and 50.'}), 400
 
     result = simulate_ai_battle(ab_depth=ab_depth, uv_depth=uv_depth, games=games, rounds=20, time_limit=time_limit)
     return jsonify({'ok': True, **result})
