@@ -293,6 +293,7 @@
         </select>
       </label>
       <label id="battle-ab-depth-wrap">d=<input id="battle-ab-depth" type="number" min="1" max="8" value="4"></label>
+      <label id="battle-ab-nmp-wrap"><input type="checkbox" id="battle-ab-nmp" checked> NMP</label>
     </div>
     <div class="battle-row">
       <label>UV
@@ -303,6 +304,7 @@
         </select>
       </label>
       <label id="battle-uv-depth-wrap">d=<input id="battle-uv-depth" type="number" min="1" max="8" value="4"></label>
+      <label id="battle-uv-nmp-wrap"><input type="checkbox" id="battle-uv-nmp" checked> NMP</label>
     </div>
     <div class="battle-row">
       <label>場次 <input id="battle-games" type="number" min="1" max="50" value="5"></label>
@@ -600,12 +602,14 @@ document.getElementById('btn-ai').addEventListener('click', async () => {
 });
 
 document.getElementById('battle-ab-strategy').addEventListener('change', function () {
-  document.getElementById('battle-ab-depth-wrap').style.display =
-    this.value === 'minimax' ? '' : 'none';
+  const show = this.value === 'minimax' ? '' : 'none';
+  document.getElementById('battle-ab-depth-wrap').style.display = show;
+  document.getElementById('battle-ab-nmp-wrap').style.display = show;
 });
 document.getElementById('battle-uv-strategy').addEventListener('change', function () {
-  document.getElementById('battle-uv-depth-wrap').style.display =
-    this.value === 'minimax' ? '' : 'none';
+  const show = this.value === 'minimax' ? '' : 'none';
+  document.getElementById('battle-uv-depth-wrap').style.display = show;
+  document.getElementById('battle-uv-nmp-wrap').style.display = show;
 });
 
 document.getElementById('btn-ai-battle').addEventListener('click', async () => {
@@ -619,6 +623,8 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   const uvStrategy = document.getElementById('battle-uv-strategy').value;
   const abDepth  = parseInt(document.getElementById('battle-ab-depth').value, 10) || 4;
   const uvDepth  = parseInt(document.getElementById('battle-uv-depth').value, 10) || 4;
+  const abNmp    = document.getElementById('battle-ab-nmp').checked;
+  const uvNmp    = document.getElementById('battle-uv-nmp').checked;
   const games    = parseInt(document.getElementById('battle-games').value, 10) || 5;
   const timeLimit = parseFloat(document.getElementById('battle-time-limit').value);
 
@@ -627,6 +633,8 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
     uv_strategy: uvStrategy,
     ab_depth: abDepth,
     uv_depth: uvDepth,
+    ab_nmp: abNmp,
+    uv_nmp: uvNmp,
     games,
     time_limit: Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : 0,
   });
@@ -644,10 +652,11 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   renderBoard();
   updatePanel();
 
-  const fmtStrategy = (s, depth) =>
-    s === 'minimax' ? `Minimax(d${depth})` : s.charAt(0).toUpperCase() + s.slice(1);
-  const abLabel = fmtStrategy(abStrategy, data.ab_depth);
-  const uvLabel = fmtStrategy(uvStrategy, data.uv_depth);
+  const fmtStrategy = (s, depth, nmp) =>
+    (s === 'minimax' ? `Minimax(d${depth})` : s.charAt(0).toUpperCase() + s.slice(1)) +
+    (s === 'minimax' && nmp ? '+NMP' : '');
+  const abLabel = fmtStrategy(abStrategy, data.ab_depth, data.ab_nmp);
+  const uvLabel = fmtStrategy(uvStrategy, data.uv_depth, data.uv_nmp);
 
   document.getElementById('battle-stats-text').innerHTML =
     `<span class="team-ab">AB</span> ${abLabel} vs <span class="team-uv">UV</span> ${uvLabel}<br>` +
