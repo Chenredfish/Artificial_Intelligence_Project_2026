@@ -90,8 +90,9 @@ Layered implementation — each level is independently deployable and stronger t
 
 ### Batch 5B — AI Benchmarking (prerequisite for both 5A tuning and 5C)
 
-- [X] AI vs AI battle mode: two AI agents play a full game automatically
-- [ ] Batch simulation: run N games between two AI versions, report win rate and avg score
+- [x] AI vs AI battle mode: two AI agents play a full game automatically
+- [x] Batch simulation: run N games, report win rate / avg score / avg rounds per strategy pairing
+- [x] Strategy comparison: select Random / Greedy / Minimax(depth) independently for AB and UV
 - [ ] Intra-team testing: play human or earlier AI version against current build to measure improvement
 
 > Run this after each L3+ upgrade. Win rate vs the previous version is the only reliable
@@ -129,7 +130,7 @@ Requires 5B (self-play data generation) to be complete first.
 
 The TA will verify the following — UI and AI quality are not graded at this stage:
 
-- [ ] Game is playable including turn order
-- [ ] Program responds within the time limit
-- [ ] **Per-move response time is displayed**
-- [ ] **Cumulative response time is displayed**
+- [x] Game is playable including turn order
+- [x] Program responds within the time limit
+- [x] **Per-move response time is displayed**
+- [x] **Cumulative response time is displayed**
