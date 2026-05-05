@@ -194,6 +194,25 @@
     #btn-sample  { background: #45475a; color: #cdd6f4; }
     #btn-submit  { background: #a6e3a1; color: #1e1e2e; }
     #btn-cancel  { background: #45475a; color: #cdd6f4; }
+
+    /* ── AI Battle config & table ─────────────────── */
+    .battle-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:5px; font-size:12px; }
+    .battle-row label { display:flex; align-items:center; gap:4px; }
+    .battle-row select {
+      background:#1e1e2e; color:#cdd6f4;
+      border:1px solid #45475a; border-radius:4px;
+      padding:2px 4px; font-size:12px; font-family:'Courier New',monospace;
+    }
+    .battle-row input[type=number] {
+      width:46px; background:#1e1e2e; color:#cdd6f4;
+      border:1px solid #45475a; border-radius:4px; padding:2px 4px;
+    }
+    .battle-table { width:100%; border-collapse:collapse; font-size:11px; margin-top:4px; }
+    .battle-table th, .battle-table td { padding:2px 4px; border:1px solid #45475a; text-align:center; }
+    .battle-table th { background:#1e1e2e; color:#6c7086; }
+    .battle-table tr.ab-win td:nth-child(2) { color:#89b4fa; font-weight:bold; }
+    .battle-table tr.uv-win td:nth-child(2) { color:#f38ba8; font-weight:bold; }
+    .battle-table tr.draw-row td:nth-child(2) { color:#f9e2af; }
   </style>
 </head>
 <body>
@@ -263,30 +282,55 @@
   </div>
 
   <div class="card">
-    <div class="card-title">AI Battle (AB first, 20 rounds, L4 Alpha-Beta, random start boards)</div>
-    <div id="battle-actions" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-      <label style="font-size:12px; display:flex; align-items:center; gap:4px;">
-        AB depth
-        <input id="battle-ab-depth" type="number" min="1" max="8" value="4" style="width:56px;">
+    <div class="card-title">AI Battle 批次測試</div>
+
+    <div class="battle-row">
+      <label>AB
+        <select id="battle-ab-strategy">
+          <option value="random">Random</option>
+          <option value="greedy">Greedy</option>
+          <option value="minimax" selected>Minimax</option>
+        </select>
       </label>
-      <label style="font-size:12px; display:flex; align-items:center; gap:4px;">
-        UV depth
-        <input id="battle-uv-depth" type="number" min="1" max="8" value="4" style="width:56px;">
-      </label>
-      <label style="font-size:12px; display:flex; align-items:center; gap:4px;">
-        Games
-        <input id="battle-games" type="number" min="1" max="50" value="10" style="width:56px;">
-      </label>
-      <button class="btn" id="btn-ai-battle">Run AI Battle</button>
+      <label id="battle-ab-depth-wrap">d=<input id="battle-ab-depth" type="number" min="1" max="8" value="4"></label>
     </div>
-    <div id="battle-result" style="font-size:12px; margin-top:8px; color:#cdd6af;">
-      AI battle result: —
+    <div class="battle-row">
+      <label>UV
+        <select id="battle-uv-strategy">
+          <option value="random">Random</option>
+          <option value="greedy">Greedy</option>
+          <option value="minimax" selected>Minimax</option>
+        </select>
+      </label>
+      <label id="battle-uv-depth-wrap">d=<input id="battle-uv-depth" type="number" min="1" max="8" value="4"></label>
     </div>
-    <div id="battle-paths" style="font-size:12px; margin-top:8px;">
-      <div><strong>AB moves</strong></div>
-      <div id="battle-ab-path" style="white-space: pre-wrap; margin-left: 8px; min-height: 18px;"></div>
-      <div style="margin-top:8px;"><strong>UV moves</strong></div>
-      <div id="battle-uv-path" style="white-space: pre-wrap; margin-left: 8px; min-height: 18px;"></div>
+    <div class="battle-row">
+      <label>場次 <input id="battle-games" type="number" min="1" max="50" value="5"></label>
+      <label>時限(s) <input id="battle-time-limit" type="number" min="0" step="0.1" value="2"></label>
+      <button class="btn" id="btn-ai-battle" style="padding:6px 10px;">Run</button>
+    </div>
+
+    <div id="battle-status" style="font-size:12px; margin-top:4px; color:#6c7086;">等待開始</div>
+
+    <div id="battle-summary" style="display:none;">
+      <div id="battle-stats-text" style="font-size:12px; line-height:1.7; margin-top:6px;"></div>
+      <div style="max-height:160px; overflow-y:auto; margin-top:4px;">
+        <table class="battle-table">
+          <thead>
+            <tr><th>#</th><th>勝者</th><th>AB</th><th>UV</th><th>回合</th></tr>
+          </thead>
+          <tbody id="battle-game-tbody"></tbody>
+        </table>
+      </div>
+      <details style="margin-top:6px;">
+        <summary style="cursor:pointer; font-size:11px; color:#a6e3a1; user-select:none;">最後一局棋譜</summary>
+        <div style="max-height:180px; overflow-y:auto; margin-top:4px; font-size:11px;">
+          <div class="team-ab">AB</div>
+          <div id="battle-ab-path" style="white-space:pre-wrap; margin-left:8px;"></div>
+          <div class="team-uv" style="margin-top:4px;">UV</div>
+          <div id="battle-uv-path" style="white-space:pre-wrap; margin-left:8px;"></div>
+        </div>
+      </details>
     </div>
   </div>
 
@@ -555,29 +599,42 @@ document.getElementById('btn-ai').addEventListener('click', async () => {
   document.getElementById('btn-ai').disabled = false;
 });
 
+document.getElementById('battle-ab-strategy').addEventListener('change', function () {
+  document.getElementById('battle-ab-depth-wrap').style.display =
+    this.value === 'minimax' ? '' : 'none';
+});
+document.getElementById('battle-uv-strategy').addEventListener('change', function () {
+  document.getElementById('battle-uv-depth-wrap').style.display =
+    this.value === 'minimax' ? '' : 'none';
+});
+
 document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   if (!state) return;
 
   document.getElementById('btn-ai-battle').disabled = true;
-  document.getElementById('battle-result').textContent = 'AI battle running...';
-  document.getElementById('battle-ab-path').textContent = '';
-  document.getElementById('battle-uv-path').textContent = '';
+  document.getElementById('battle-status').textContent = 'Running...';
+  document.getElementById('battle-summary').style.display = 'none';
 
-  const abDepth = parseInt(document.getElementById('battle-ab-depth').value, 10) || 4;
-  const uvDepth = parseInt(document.getElementById('battle-uv-depth').value, 10) || 4;
-  const games = parseInt(document.getElementById('battle-games').value, 10) || 10;
-  const timeLimit = parseFloat(document.getElementById('ai-time-limit').value);
+  const abStrategy = document.getElementById('battle-ab-strategy').value;
+  const uvStrategy = document.getElementById('battle-uv-strategy').value;
+  const abDepth  = parseInt(document.getElementById('battle-ab-depth').value, 10) || 4;
+  const uvDepth  = parseInt(document.getElementById('battle-uv-depth').value, 10) || 4;
+  const games    = parseInt(document.getElementById('battle-games').value, 10) || 5;
+  const timeLimit = parseFloat(document.getElementById('battle-time-limit').value);
+
   const data = await apiPost('/api/ai_battle', {
+    ab_strategy: abStrategy,
+    uv_strategy: uvStrategy,
     ab_depth: abDepth,
     uv_depth: uvDepth,
     games,
-    time_limit: Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : 0
+    time_limit: Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : 0,
   });
 
   document.getElementById('btn-ai-battle').disabled = false;
 
   if (!data.ok) {
-    document.getElementById('battle-result').textContent = 'AI battle failed: ' + data.error;
+    document.getElementById('battle-status').textContent = '錯誤：' + data.error;
     return;
   }
 
@@ -587,14 +644,34 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   renderBoard();
   updatePanel();
 
-  const winner = data.winner === 'draw' ? 'Draw' : data.winner + ' wins';
-  document.getElementById('battle-result').textContent =
-    `${data.games} games complete. AB ${data.ab_wins}, UV ${data.uv_wins}, draws ${data.draws}. ` +
-    `AB win rate ${data.ab_win_rate}%, UV win rate ${data.uv_win_rate}%, draw rate ${data.draw_rate}%. ` +
-    `Last game: ${winner}. AB score ${data.ab_score}, UV score ${data.uv_score}. AB L4 depth=${data.ab_depth}, UV L4 depth=${data.uv_depth}.`;
+  const fmtStrategy = (s, depth) =>
+    s === 'minimax' ? `Minimax(d${depth})` : s.charAt(0).toUpperCase() + s.slice(1);
+  const abLabel = fmtStrategy(abStrategy, data.ab_depth);
+  const uvLabel = fmtStrategy(uvStrategy, data.uv_depth);
 
-  document.getElementById('battle-ab-path').textContent = data.ab_moves.join('\n');
-  document.getElementById('battle-uv-path').textContent = data.uv_moves.join('\n');
+  document.getElementById('battle-stats-text').innerHTML =
+    `<span class="team-ab">AB</span> ${abLabel} vs <span class="team-uv">UV</span> ${uvLabel}<br>` +
+    `${data.games} 局 — AB勝 <strong>${data.ab_wins}</strong> / UV勝 <strong>${data.uv_wins}</strong> / 平 <strong>${data.draws}</strong><br>` +
+    `勝率：<span class="team-ab">AB ${data.ab_win_rate}%</span> ` +
+    `/ <span class="team-uv">UV ${data.uv_win_rate}%</span> / 平 ${data.draw_rate}%<br>` +
+    `平均得分：<span class="team-ab">AB ${data.avg_ab_score}</span> / <span class="team-uv">UV ${data.avg_uv_score}</span><br>` +
+    `平均回合：${data.avg_rounds}`;
+
+  const tbody = document.getElementById('battle-game-tbody');
+  tbody.innerHTML = '';
+  for (const g of (data.game_log || [])) {
+    const tr = document.createElement('tr');
+    tr.className = g.winner === 'AB' ? 'ab-win' : g.winner === 'UV' ? 'uv-win' : 'draw-row';
+    tr.innerHTML = `<td>${g.game}</td><td>${g.winner === 'draw' ? '平' : g.winner}</td>` +
+                   `<td>${g.ab_score}</td><td>${g.uv_score}</td><td>${g.rounds}</td>`;
+    tbody.appendChild(tr);
+  }
+
+  document.getElementById('battle-ab-path').textContent = (data.ab_moves || []).join('\n');
+  document.getElementById('battle-uv-path').textContent = (data.uv_moves || []).join('\n');
+
+  document.getElementById('battle-status').textContent = `完成 ${data.games} 局`;
+  document.getElementById('battle-summary').style.display = 'block';
 });
 
 document.getElementById('btn-confirm-ai').addEventListener('click', async () => {
