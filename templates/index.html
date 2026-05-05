@@ -292,7 +292,7 @@
           <option value="minimax" selected>Minimax</option>
         </select>
       </label>
-      <label id="battle-ab-depth-wrap">d=<input id="battle-ab-depth" type="number" min="1" max="8" value="4"></label>
+      <label id="battle-ab-depth-wrap">d=<input id="battle-ab-depth" type="number" min="1" max="50" value="50"></label>
       <label id="battle-ab-nmp-wrap"><input type="checkbox" id="battle-ab-nmp" checked> NMP</label>
     </div>
     <div class="battle-row">
@@ -303,12 +303,12 @@
           <option value="minimax" selected>Minimax</option>
         </select>
       </label>
-      <label id="battle-uv-depth-wrap">d=<input id="battle-uv-depth" type="number" min="1" max="8" value="4"></label>
+      <label id="battle-uv-depth-wrap">d=<input id="battle-uv-depth" type="number" min="1" max="50" value="50"></label>
       <label id="battle-uv-nmp-wrap"><input type="checkbox" id="battle-uv-nmp" checked> NMP</label>
     </div>
     <div class="battle-row">
       <label>場次 <input id="battle-games" type="number" min="1" max="50" value="5"></label>
-      <label>時限(s) <input id="battle-time-limit" type="number" min="0" step="0.1" value="2"></label>
+      <label>時限(s) <input id="battle-time-limit" type="number" min="0" step="1" value="60"></label>
       <button class="btn" id="btn-ai-battle" style="padding:6px 10px;">Run</button>
     </div>
 

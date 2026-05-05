@@ -726,7 +726,8 @@ def api_ask_ai():
     if not moves:
         return jsonify({'ok': False, 'error': 'No legal moves available'}), 400
 
-    move = choose_minimax_move(_game.board, _game.current_team, time_limit=time_limit)
+    depth = 50 if (time_limit and time_limit > 0) else MINIMAX_DEPTH
+    move = choose_minimax_move(_game.board, _game.current_team, depth=depth, time_limit=time_limit)
     if move is None:
         return jsonify({'ok': False, 'error': 'No valid AI move found.'}), 400
     from_pos, to_pos = move
@@ -772,8 +773,9 @@ def api_ai_battle():
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error': 'Depth, game count, and time limit must be numbers.'}), 400
 
-    ab_depth = max(1, min(ab_depth, 8))
-    uv_depth = max(1, min(uv_depth, 8))
+    max_depth = 50 if (time_limit and time_limit > 0) else 8
+    ab_depth = max(1, min(ab_depth, max_depth))
+    uv_depth = max(1, min(uv_depth, max_depth))
     if games < 1 or games > 50:
         return jsonify({'ok': False, 'error': 'Game count must be between 1 and 50.'}), 400
 
