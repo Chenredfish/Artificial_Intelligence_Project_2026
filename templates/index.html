@@ -623,8 +623,18 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   if (!state) return;
 
   document.getElementById('btn-ai-battle').disabled = true;
-  document.getElementById('battle-status').textContent = 'Running...';
   document.getElementById('battle-summary').style.display = 'none';
+
+  // 即時計時器：讓使用者知道系統仍在運行
+  let elapsed = 0;
+  const statusEl = document.getElementById('battle-status');
+  statusEl.textContent = '運行中... 00:00';
+  const runTimer = setInterval(() => {
+    elapsed++;
+    const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const s = String(elapsed % 60).padStart(2, '0');
+    statusEl.textContent = `運行中... ${m}:${s}`;
+  }, 1000);
 
   const abStrategy = document.getElementById('battle-ab-strategy').value;
   const uvStrategy = document.getElementById('battle-uv-strategy').value;
@@ -652,6 +662,7 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
     time_limit: Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : 0,
   });
 
+  clearInterval(runTimer);
   document.getElementById('btn-ai-battle').disabled = false;
 
   if (!data.ok) {
