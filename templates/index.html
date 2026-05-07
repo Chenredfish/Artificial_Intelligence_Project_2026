@@ -295,6 +295,7 @@
       <label id="battle-ab-depth-wrap">d=<input id="battle-ab-depth" type="number" min="1" max="50" value="50"></label>
       <label id="battle-ab-nmp-wrap"><input type="checkbox" id="battle-ab-nmp" checked> NMP R=<input id="battle-ab-nmp-r" type="number" min="1" max="4" value="2" style="width:36px;"></label>
       <label id="battle-ab-lmr-wrap"><input type="checkbox" id="battle-ab-lmr" checked> LMR</label>
+      <label id="battle-ab-parallel-wrap"><input type="checkbox" id="battle-ab-parallel"> 平行</label>
     </div>
     <div class="battle-row">
       <label>UV
@@ -307,6 +308,7 @@
       <label id="battle-uv-depth-wrap">d=<input id="battle-uv-depth" type="number" min="1" max="50" value="50"></label>
       <label id="battle-uv-nmp-wrap"><input type="checkbox" id="battle-uv-nmp" checked> NMP R=<input id="battle-uv-nmp-r" type="number" min="1" max="4" value="2" style="width:36px;"></label>
       <label id="battle-uv-lmr-wrap"><input type="checkbox" id="battle-uv-lmr" checked> LMR</label>
+      <label id="battle-uv-parallel-wrap"><input type="checkbox" id="battle-uv-parallel"> 平行</label>
     </div>
     <div class="battle-row" id="battle-lmr-params-row">
       <label>LMR min-d=<input id="battle-lmr-min-depth" type="number" min="2" max="10" value="3" style="width:36px;"></label>
@@ -619,12 +621,14 @@ document.getElementById('battle-ab-strategy').addEventListener('change', functio
   document.getElementById('battle-ab-depth-wrap').style.display = show;
   document.getElementById('battle-ab-nmp-wrap').style.display = show;
   document.getElementById('battle-ab-lmr-wrap').style.display = show;
+  document.getElementById('battle-ab-parallel-wrap').style.display = show;
 });
 document.getElementById('battle-uv-strategy').addEventListener('change', function () {
   const show = this.value === 'minimax' ? '' : 'none';
   document.getElementById('battle-uv-depth-wrap').style.display = show;
   document.getElementById('battle-uv-nmp-wrap').style.display = show;
   document.getElementById('battle-uv-lmr-wrap').style.display = show;
+  document.getElementById('battle-uv-parallel-wrap').style.display = show;
 });
 
 document.getElementById('btn-ai-battle').addEventListener('click', async () => {
@@ -656,6 +660,8 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   const uvLmr     = document.getElementById('battle-uv-lmr').checked;
   const lmrMinDepth   = parseInt(document.getElementById('battle-lmr-min-depth').value, 10) || 3;
   const lmrMoveIndex  = parseInt(document.getElementById('battle-lmr-move-index').value, 10) || 3;
+  const abParallel = document.getElementById('battle-ab-parallel').checked;
+  const uvParallel = document.getElementById('battle-uv-parallel').checked;
   const firstTeam = document.getElementById('battle-first-team').value;
   const games     = parseInt(document.getElementById('battle-games').value, 10) || 10;
   const timeLimit = parseFloat(document.getElementById('battle-time-limit').value);
@@ -673,6 +679,8 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
     uv_lmr: uvLmr,
     lmr_min_depth: lmrMinDepth,
     lmr_move_index: lmrMoveIndex,
+    ab_parallel: abParallel,
+    uv_parallel: uvParallel,
     first_team: firstTeam,
     games,
     time_limit: Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : 0,
