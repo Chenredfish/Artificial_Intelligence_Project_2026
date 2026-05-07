@@ -67,7 +67,9 @@ def api_start_timer():
 
 
 MINIMAX_DEPTH = 5
-DEFAULT_NMP_R = 2  # null move reduction factor default
+DEFAULT_NMP_R = 2          # null move reduction factor
+DEFAULT_LMR_MIN_DEPTH = 3  # minimum depth to apply LMR
+DEFAULT_LMR_MOVE_INDEX = 3 # start reducing moves at this index (0-based)
 
 # 評估函式：更細緻的 L7 版本，包含棋種價值差異、位置、中心控制、行動力與攻防交換
 EVAL_PIECE_WEIGHTS = {
@@ -401,7 +403,7 @@ def quiescence_search(board, team, maximizing_team, alpha, beta, start_time=None
     return alpha
 
 
-def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float('inf'), start_time=None, time_limit=None, transposition_table=None, history_heuristic=None, allow_null=True, nmp_r=DEFAULT_NMP_R):
+def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float('inf'), start_time=None, time_limit=None, transposition_table=None, history_heuristic=None, allow_null=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX):
     if time_limit is not None and start_time is not None:
         if time.time() - start_time >= time_limit:
             raise SearchTimeout()
@@ -438,21 +440,35 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
             try:
                 null_val = minimax(board, opponent, depth - 1 - nmp_r, maximizing_team,
                                    alpha, beta, start_time, time_limit,
-                                   transposition_table, history_heuristic, allow_null=False, nmp_r=nmp_r)
+                                   transposition_table, history_heuristic,
+                                   allow_null=False, nmp_r=nmp_r,
+                                   use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
                 if null_val >= beta:
                     return beta
             except SearchTimeout:
                 raise
 
+    _mm_kwargs = dict(start_time=start_time, time_limit=time_limit,
+                      transposition_table=transposition_table, history_heuristic=history_heuristic,
+                      allow_null=allow_null, nmp_r=nmp_r,
+                      use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
+
     if team == maximizing_team:
         best = -float('inf')
         best_move = None
-        for from_pos, to_pos in moves:
+        for move_idx, (from_pos, to_pos) in enumerate(moves):
             if time_limit is not None and start_time is not None and time.time() - start_time >= time_limit:
                 raise SearchTimeout()
             child = board.copy()
             child.apply_move(from_pos, to_pos)
-            value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, start_time, time_limit, transposition_table, history_heuristic, allow_null=allow_null, nmp_r=nmp_r)
+            # LMR: reduce later quiet (non-capture) moves
+            if (use_lmr and depth >= lmr_min_depth and move_idx >= lmr_move_index
+                    and not is_capture_move(board, (from_pos, to_pos))):
+                value = minimax(child, opponent, max(1, depth - 2), maximizing_team, alpha, beta, **_mm_kwargs)
+                if value > alpha:
+                    value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
+            else:
+                value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
             if value > best:
                 best = value
                 best_move = (from_pos, to_pos)
@@ -469,7 +485,7 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
                 raise SearchTimeout()
             child = board.copy()
             child.apply_move(from_pos, to_pos)
-            value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, start_time, time_limit, transposition_table, history_heuristic, allow_null=allow_null, nmp_r=nmp_r)
+            value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
             if value < best:
                 best = value
                 best_move = (from_pos, to_pos)
@@ -496,7 +512,7 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
     return best
 
 
-def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R):
+def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX):
     moves = board.all_legal_moves(team)
     if not moves:
         return None
@@ -526,7 +542,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
                     raise SearchTimeout()
                 child = board.copy()
                 child.apply_move(from_pos, to_pos)
-                value = minimax(child, opponent, current_depth - 1, team, -float('inf'), float('inf'), start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp, nmp_r=nmp_r)
+                value = minimax(child, opponent, current_depth - 1, team, -float('inf'), float('inf'), start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
                 if value > best_value:
                     best_value = value
                     current_moves = [(from_pos, to_pos)]
@@ -568,16 +584,16 @@ def choose_greedy_move(board, team):
     return random.choice(moves)
 
 
-def choose_move_by_strategy(board, team, strategy, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R):
+def choose_move_by_strategy(board, team, strategy, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX):
     if strategy == 'random':
         moves = board.all_legal_moves(team)
         return random.choice(moves) if moves else None
     if strategy == 'greedy':
         return choose_greedy_move(board, team)
-    return choose_minimax_move(board, team, depth=depth, time_limit=time_limit, use_nmp=use_nmp, nmp_r=nmp_r)
+    return choose_minimax_move(board, team, depth=depth, time_limit=time_limit, use_nmp=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
 
 
-def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random'):
+def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX):
     board = Board.random_legal_board()
     game = Game(board=board)
     actual_first = random.choice(['AB', 'UV']) if first_team == 'random' else first_team
@@ -601,9 +617,10 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
                 continue
             strategy = ab_strategy if team == 'AB' else uv_strategy
             depth    = ab_depth    if team == 'AB' else uv_depth
-            nmp      = ab_nmp      if team == 'AB' else uv_nmp
+            nmp       = ab_nmp     if team == 'AB' else uv_nmp
             nmp_r_val = ab_nmp_r   if team == 'AB' else uv_nmp_r
-            move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp, nmp_r=nmp_r_val)
+            lmr       = ab_lmr     if team == 'AB' else uv_lmr
+            move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp, nmp_r=nmp_r_val, use_lmr=lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
             if move is not None:
                 from_pos, to_pos = move
                 result = game.make_move(from_pos, to_pos)
@@ -637,7 +654,7 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
     }
 
 
-def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random'):
+def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX):
     results = {
         'games': games,
         'ab_wins': 0,
@@ -665,7 +682,7 @@ def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10,
     total_rounds = 0
 
     for i in range(games):
-        game_result = play_ai_battle_game(ab_depth, uv_depth, rounds=rounds, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp, ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r, first_team=first_team)
+        game_result = play_ai_battle_game(ab_depth, uv_depth, rounds=rounds, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp, ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r, first_team=first_team, ab_lmr=ab_lmr, uv_lmr=uv_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
         if game_result['winner'] == 'AB':
             results['ab_wins'] += 1
         elif game_result['winner'] == 'UV':
@@ -799,6 +816,14 @@ def api_ai_battle():
     if first_team not in {'AB', 'UV', 'random'}:
         return jsonify({'ok': False, 'error': 'first_team must be AB, UV, or random.'}), 400
 
+    ab_lmr = bool(data.get('ab_lmr', True))
+    uv_lmr = bool(data.get('uv_lmr', True))
+    try:
+        lmr_min_depth  = max(2, min(int(data.get('lmr_min_depth',  DEFAULT_LMR_MIN_DEPTH)),  10))
+        lmr_move_index = max(1, min(int(data.get('lmr_move_index', DEFAULT_LMR_MOVE_INDEX)), 10))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error': 'lmr params must be numbers.'}), 400
+
     def generate():
         ab_wins = uv_wins = draws = 0
         ab_total = uv_total = total_rounds = 0
@@ -812,6 +837,8 @@ def api_ai_battle():
                 ab_nmp=ab_nmp, uv_nmp=uv_nmp,
                 ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r,
                 first_team=first_team,
+                ab_lmr=ab_lmr, uv_lmr=uv_lmr,
+                lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index,
             )
             if gr['winner'] == 'AB':
                 ab_wins += 1
@@ -851,6 +878,8 @@ def api_ai_battle():
             'ab_strategy': ab_strategy, 'uv_strategy': uv_strategy,
             'ab_nmp': ab_nmp, 'uv_nmp': uv_nmp,
             'ab_nmp_r': ab_nmp_r, 'uv_nmp_r': uv_nmp_r,
+            'ab_lmr': ab_lmr, 'uv_lmr': uv_lmr,
+            'lmr_min_depth': lmr_min_depth, 'lmr_move_index': lmr_move_index,
             'first_team': first_team,
             'game_log': game_log,
         }

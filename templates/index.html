@@ -294,6 +294,7 @@
       </label>
       <label id="battle-ab-depth-wrap">d=<input id="battle-ab-depth" type="number" min="1" max="50" value="50"></label>
       <label id="battle-ab-nmp-wrap"><input type="checkbox" id="battle-ab-nmp" checked> NMP R=<input id="battle-ab-nmp-r" type="number" min="1" max="4" value="2" style="width:36px;"></label>
+      <label id="battle-ab-lmr-wrap"><input type="checkbox" id="battle-ab-lmr" checked> LMR</label>
     </div>
     <div class="battle-row">
       <label>UV
@@ -305,6 +306,11 @@
       </label>
       <label id="battle-uv-depth-wrap">d=<input id="battle-uv-depth" type="number" min="1" max="50" value="50"></label>
       <label id="battle-uv-nmp-wrap"><input type="checkbox" id="battle-uv-nmp" checked> NMP R=<input id="battle-uv-nmp-r" type="number" min="1" max="4" value="2" style="width:36px;"></label>
+      <label id="battle-uv-lmr-wrap"><input type="checkbox" id="battle-uv-lmr" checked> LMR</label>
+    </div>
+    <div class="battle-row" id="battle-lmr-params-row">
+      <label>LMR min-d=<input id="battle-lmr-min-depth" type="number" min="2" max="10" value="3" style="width:36px;"></label>
+      <label>start=<input id="battle-lmr-move-index" type="number" min="1" max="10" value="3" style="width:36px;"></label>
     </div>
     <div class="battle-row">
       <label>先手
@@ -612,11 +618,13 @@ document.getElementById('battle-ab-strategy').addEventListener('change', functio
   const show = this.value === 'minimax' ? '' : 'none';
   document.getElementById('battle-ab-depth-wrap').style.display = show;
   document.getElementById('battle-ab-nmp-wrap').style.display = show;
+  document.getElementById('battle-ab-lmr-wrap').style.display = show;
 });
 document.getElementById('battle-uv-strategy').addEventListener('change', function () {
   const show = this.value === 'minimax' ? '' : 'none';
   document.getElementById('battle-uv-depth-wrap').style.display = show;
   document.getElementById('battle-uv-nmp-wrap').style.display = show;
+  document.getElementById('battle-uv-lmr-wrap').style.display = show;
 });
 
 document.getElementById('btn-ai-battle').addEventListener('click', async () => {
@@ -644,6 +652,10 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   const uvNmp     = document.getElementById('battle-uv-nmp').checked;
   const abNmpR    = parseInt(document.getElementById('battle-ab-nmp-r').value, 10) || 2;
   const uvNmpR    = parseInt(document.getElementById('battle-uv-nmp-r').value, 10) || 2;
+  const abLmr     = document.getElementById('battle-ab-lmr').checked;
+  const uvLmr     = document.getElementById('battle-uv-lmr').checked;
+  const lmrMinDepth   = parseInt(document.getElementById('battle-lmr-min-depth').value, 10) || 3;
+  const lmrMoveIndex  = parseInt(document.getElementById('battle-lmr-move-index').value, 10) || 3;
   const firstTeam = document.getElementById('battle-first-team').value;
   const games     = parseInt(document.getElementById('battle-games').value, 10) || 10;
   const timeLimit = parseFloat(document.getElementById('battle-time-limit').value);
@@ -657,6 +669,10 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
     uv_nmp: uvNmp,
     ab_nmp_r: abNmpR,
     uv_nmp_r: uvNmpR,
+    ab_lmr: abLmr,
+    uv_lmr: uvLmr,
+    lmr_min_depth: lmrMinDepth,
+    lmr_move_index: lmrMoveIndex,
     first_team: firstTeam,
     games,
     time_limit: Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : 0,
@@ -676,11 +692,12 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   renderBoard();
   updatePanel();
 
-  const fmtStrategy = (s, depth, nmp, nmpr) =>
+  const fmtStrategy = (s, depth, nmp, nmpr, lmr) =>
     (s === 'minimax' ? `Minimax(d${depth})` : s.charAt(0).toUpperCase() + s.slice(1)) +
-    (s === 'minimax' && nmp ? `+NMP(R${nmpr})` : '');
-  const abLabel = fmtStrategy(abStrategy, data.ab_depth, data.ab_nmp, data.ab_nmp_r);
-  const uvLabel = fmtStrategy(uvStrategy, data.uv_depth, data.uv_nmp, data.uv_nmp_r);
+    (s === 'minimax' && nmp ? `+NMP(R${nmpr})` : '') +
+    (s === 'minimax' && lmr ? '+LMR' : '');
+  const abLabel = fmtStrategy(abStrategy, data.ab_depth, data.ab_nmp, data.ab_nmp_r, data.ab_lmr);
+  const uvLabel = fmtStrategy(uvStrategy, data.uv_depth, data.uv_nmp, data.uv_nmp_r, data.uv_lmr);
 
   const ftLabel = data.first_team === 'random' ? '隨機' : data.first_team + '先手';
   document.getElementById('battle-stats-text').innerHTML =
