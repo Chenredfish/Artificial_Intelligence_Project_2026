@@ -40,7 +40,57 @@ Then open `http://localhost:5000` in your browser.
 
 - **Imports inside `src/`:** always use relative imports (e.g. `from .board import Board`), never `from src.board import Board`
 - **Test files:** all tests go in `tests/`, never in the project root
-- **Run tests:** `.venv\Scripts\pytest tests/ -v` from project root
+- **Run tests (Windows):** `.venv\Scripts\python.exe -m pytest tests/ -v`
+- **Run tests (macOS/Linux):** `.venv/bin/python -m pytest tests/ -v`
+
+## AI Search Engine
+
+Current search stack (all active by default):
+
+| Layer | Technique | Effect |
+|---|---|---|
+| L4 | Alpha-Beta pruning | ~2× deeper vs plain Minimax |
+| L5 | Iterative Deepening | Fills 60 s budget, returns best depth reached |
+| L6 | Move ordering + Transposition Table | Dramatically improves Alpha-Beta cut rate |
+| L6 | History Heuristic | Improves non-capture move ordering |
+| L6 | Quiescence Search | Avoids horizon effect at leaf nodes |
+| L7 | Null Move Pruning (NMP) | Skips own turn at MAX nodes; prunes large subtrees |
+| L7 | Late Move Reductions (LMR) | Reduces search depth for quiet late moves |
+| L7 | Root Parallelization | Distributes root moves across CPU cores |
+
+**Benchmark (depth=5, 5 random boards):**
+
+| Config | Mean time |
+|---|---|
+| Baseline (no optimizations) | 12.6 s |
+| + merge eval pass + board_key | 11.1 s |
+| + LMR | 5.0 s |
+| + Root parallelization | 1.0 s |
+
+### AI Battle UI controls
+
+- Per team: Strategy (Random / Greedy / Minimax), Depth, NMP checkbox + R value, LMR checkbox, 平行 checkbox
+- Shared LMR params: `min-d` (minimum depth to apply, default 3), `start` (move index to begin reducing, default 3)
+- 先手: 隨機 / AB / UV (default: 隨機, eliminates first-mover bias)
+- Game count: 1–200; Time limit: 60 s default
+- Streaming results: each game appends a row in real-time
+
+### Parallel mode notes
+
+- **Parallel checkbox** is off by default. Enable when using fixed depth (no time limit) to get the full multi-core speedup.
+- Parallel mode skips iterative deepening — each root move is evaluated at `depth-1` in its own process.
+- Incompatible with time limit mode (subprocesses cannot share a timeout signal).
+- Works on Windows (spawn), macOS (spawn, Python 3.8+), and Linux (fork).
+
+### Benchmark script
+
+```bash
+# Sequential (default)
+python benchmark.py sequential
+
+# Parallel
+python benchmark.py parallel --parallel
+```
 
 ## Development Batches
 
@@ -77,13 +127,13 @@ Then open `http://localhost:5000` in your browser.
 
 Layered implementation — each level is independently deployable and stronger than the previous.
 
-- [X] **L1** Random legal move (demo baseline)
-- [X] **L2** Greedy — prioritise highest-value capture; else random
-- [X] **L3** Minimax search, depth 2–3
-- [X] **L4** Alpha-Beta pruning (same strength as L3, searches ~2× deeper in same time)
-- [X] **L5** Iterative Deepening — fills the full 60 s budget, returns best move found so far
-- [X] **L6** Move ordering + Transposition table (dramatically improves Alpha-Beta efficiency)
-- [ ] **L7** Evaluation function tuning: piece-square tables, mobility score, threat assessment
+- [x] **L1** Random legal move (demo baseline)
+- [x] **L2** Greedy — prioritise highest-value capture; else random
+- [x] **L3** Minimax search, depth 2–3
+- [x] **L4** Alpha-Beta pruning (same strength as L3, searches ~2× deeper in same time)
+- [x] **L5** Iterative Deepening — fills the full 60 s budget, returns best move found so far
+- [x] **L6** Move ordering + Transposition table (dramatically improves Alpha-Beta efficiency)
+- [x] **L7** Evaluation function: piece-square tables, mobility, threat assessment, NMP, LMR
 
 > **Evaluation function components (L3+):** material value (A/B/U/V=3, others=1),
 > number of legal moves available, control of centre squares, pieces under attack.
@@ -91,8 +141,10 @@ Layered implementation — each level is independently deployable and stronger t
 ### Batch 5B — AI Benchmarking (prerequisite for both 5A tuning and 5C)
 
 - [x] AI vs AI battle mode: two AI agents play a full game automatically
-- [x] Batch simulation: run N games, report win rate / avg score / avg rounds per strategy pairing
+- [x] Batch simulation: run N games (up to 200), streaming per-game results in real-time
 - [x] Strategy comparison: select Random / Greedy / Minimax(depth) independently for AB and UV
+- [x] Configurable NMP (per team, R value), LMR (per team, min-depth, start-index), parallel mode
+- [x] First-team selection (random / AB / UV) to eliminate first-mover bias in testing
 - [ ] Intra-team testing: play human or earlier AI version against current build to measure improvement
 
 > Run this after each L3+ upgrade. Win rate vs the previous version is the only reliable
@@ -121,7 +173,7 @@ Requires 5B (self-play data generation) to be complete first.
 
 | Date | Event |
 |------|-------|
-| 2026-04-28 | 期中 Demo（助教驗收，每隊必到） |
+| 2026-04-28 | 期中 Demo（助教驗收，每隊必到） ✅ |
 | 2026-05-19 | 預賽截止（各組自行完成） |
 | 2026-06-02 | 複賽 + 作業報告上傳截止（Word，含隊員貢獻度） |
 | 2026-06-09 | 決賽 |
