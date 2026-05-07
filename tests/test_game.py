@@ -32,10 +32,15 @@ def test_round_increases_after_uv_move():
     board = Board.from_grid(grid)
     game = Game(board)
 
-    game.make_move((3, 3), (3, 4))
-    game.make_move((4, 4), (4, 5))
+    game.make_move((3, 3), (3, 4))  # AB round 1
+    game.make_move((4, 4), (4, 5))  # UV round 1
 
+    # round_counter increments when AB *starts* the next move, not when UV finishes
     assert game.get_current_team() == "AB"
+    assert game.get_round_counter() == 1
+
+    game.make_move((3, 4), (3, 5))  # AB round 2 — triggers increment
+
     assert game.get_round_counter() == 2
 
 
@@ -79,7 +84,7 @@ def test_move_history_records_correct_round():
 
     assert game.move_history[0]["round"] == 1
     assert game.move_history[1]["round"] == 1
-    assert game.get_round_counter() == 2  # now in round 2
+    assert game.get_round_counter() == 1  # counter stays 1 until AB begins round 2
 
 
 def test_total_time_accumulates_on_move():
