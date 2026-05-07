@@ -173,23 +173,19 @@ def game_phase(board):
     return max(0.0, min(1.0, total_pieces / 24.0))
 
 
-def move_counts(board, team):
+def moves_and_attacks(board, team):
+    """Single pass: returns (total, captures, non_captures, attack_map) for team."""
     moves = board.all_legal_moves(team)
-    capture_moves = 0
-    non_capture_moves = 0
+    capture_count = 0
+    non_capture_count = 0
+    attacks = defaultdict(int)
     for _, dest in moves:
+        attacks[dest] += 1
         if board.get(dest[0], dest[1]) is not None:
-            capture_moves += 1
+            capture_count += 1
         else:
-            non_capture_moves += 1
-    return len(moves), capture_moves, non_capture_moves
-
-
-def attack_map(board, team):
-    counts = defaultdict(int)
-    for _, dest in board.all_legal_moves(team):
-        counts[dest] += 1
-    return counts
+            non_capture_count += 1
+    return len(moves), capture_count, non_capture_count, attacks
 
 
 def influence_map(board, team):
@@ -310,10 +306,8 @@ def evaluate_board(board, maximizing_team):
     opponent = 'UV' if maximizing_team == 'AB' else 'AB'
     phase = game_phase(board)
 
-    own_moves, own_captures, own_non_capture = move_counts(board, maximizing_team)
-    opp_moves, opp_captures, opp_non_capture = move_counts(board, opponent)
-    own_attacks = attack_map(board, maximizing_team)
-    opp_attacks = attack_map(board, opponent)
+    own_moves, own_captures, own_non_capture, own_attacks = moves_and_attacks(board, maximizing_team)
+    opp_moves, opp_captures, opp_non_capture, opp_attacks = moves_and_attacks(board, opponent)
     own_influence = influence_map(board, maximizing_team)
     opp_influence = influence_map(board, opponent)
 
@@ -347,7 +341,7 @@ def evaluate_board(board, maximizing_team):
 
 
 def board_key(board):
-    return tuple(tuple(row) for row in board.to_dict())
+    return tuple(tuple(row) for row in board._grid)
 
 
 def is_capture_move(board, move):
