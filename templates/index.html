@@ -195,6 +195,46 @@
     #btn-submit  { background: #a6e3a1; color: #1e1e2e; }
     #btn-cancel  { background: #45475a; color: #cdd6f4; }
 
+    /* ── Help modal ────────────────────────────────── */
+    #help-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.72); z-index: 300;
+      align-items: center; justify-content: center;
+    }
+    #help-overlay.open { display: flex; }
+    #help-box {
+      background: #313244; border: 1px solid #585b70;
+      border-radius: 10px; padding: 20px 22px; width: 340px;
+      max-height: 80vh; overflow-y: auto;
+      position: relative;
+    }
+    #help-box h3 { font-size: 14px; margin-bottom: 12px; color: #cdd6f4; }
+    #help-close {
+      position: absolute; top: 12px; right: 14px;
+      background: none; border: none; color: #6c7086;
+      font-size: 18px; cursor: pointer; line-height: 1;
+    }
+    #help-close:hover { color: #cdd6f4; }
+    .help-section { margin-bottom: 12px; }
+    .help-section-title {
+      font-size: 10px; text-transform: uppercase;
+      letter-spacing: 1px; color: #6c7086; margin-bottom: 5px;
+    }
+    .help-row { display: flex; gap: 8px; margin-bottom: 4px; font-size: 12px; }
+    .help-key {
+      flex-shrink: 0; width: 70px;
+      color: #f9e2af; font-weight: bold;
+    }
+    .help-val { color: #a6adc8; line-height: 1.4; }
+    .help-btn {
+      background: none; border: 1px solid #585b70;
+      color: #6c7086; border-radius: 50%;
+      width: 16px; height: 16px; font-size: 10px;
+      cursor: pointer; line-height: 1; padding: 0;
+      flex-shrink: 0; margin-left: 4px;
+    }
+    .help-btn:hover { color: #cdd6f4; border-color: #cdd6f4; }
+
     /* ── AI Battle config & table ─────────────────── */
     .battle-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:5px; font-size:12px; }
     .battle-row label { display:flex; align-items:center; gap:4px; }
@@ -282,7 +322,10 @@
   </div>
 
   <div class="card">
-    <div class="card-title">AI Battle 批次測試</div>
+    <div class="card-title" style="display:flex; align-items:center; gap:6px;">
+      AI Battle 批次測試
+      <button class="help-btn" id="btn-help-open" title="參數說明">?</button>
+    </div>
 
     <div class="battle-row">
       <label>AB
@@ -356,6 +399,51 @@
     <div id="history-list"></div>
   </div>
 
+</div>
+
+<!-- Help Modal -->
+<div id="help-overlay">
+  <div id="help-box">
+    <button id="help-close" title="關閉">×</button>
+    <h3>AI Battle 參數說明</h3>
+
+    <div class="help-section">
+      <div class="help-section-title">策略選擇</div>
+      <div class="help-row"><span class="help-key">Random</span><span class="help-val">每步隨機選合法走法，用作基準對照</span></div>
+      <div class="help-row"><span class="help-key">Greedy</span><span class="help-val">優先選吃子走法（依棋子價值），無吃子時隨機</span></div>
+      <div class="help-row"><span class="help-key">Minimax</span><span class="help-val">完整搜索樹，最強；以下參數皆為 Minimax 專用</span></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">搜索深度</div>
+      <div class="help-row"><span class="help-key">d=</span><span class="help-val">最大搜索深度。有時限時系統自動用 d=50 做迭代加深，填的值無效</span></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">NMP — Null Move Pruning</div>
+      <div class="help-row"><span class="help-key">NMP</span><span class="help-val">跳過自己的一步，若對手仍無法超過剪枝門檻，直接剪掉整個分支</span></div>
+      <div class="help-row"><span class="help-key">R=</span><span class="help-val">跳過後再額外縮減幾層。R=1 保守、R=2 標準、R=3 激進（可能偶爾搜偏）</span></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">LMR — Late Move Reductions</div>
+      <div class="help-row"><span class="help-key">LMR</span><span class="help-val">排序後的後段「非吃子」走法先用較淺深度搜；只有分數比當前最佳更好才補全深度</span></div>
+      <div class="help-row"><span class="help-key">min-d</span><span class="help-val">至少在第幾層深才啟用 LMR（預設 3）。太淺啟用會損失精度</span></div>
+      <div class="help-row"><span class="help-key">start</span><span class="help-val">從第幾個走法（0-based）開始縮減（預設 3）。前幾個排序較好的走法仍全深搜</span></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">平行</div>
+      <div class="help-row"><span class="help-key">平行</span><span class="help-val">用多顆 CPU 核心同時計算所有 root 走法。僅在時限=0（不限時）時有效；有時限時自動回退 sequential</span></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">對戰設定</div>
+      <div class="help-row"><span class="help-key">先手</span><span class="help-val">哪隊先走。設「隨機」可消除先手偏差，讓結果更有統計意義</span></div>
+      <div class="help-row"><span class="help-key">場次</span><span class="help-val">總共跑幾局（1–200）。30 局以上才有統計顯著性</span></div>
+      <div class="help-row"><span class="help-key">時限(s)</span><span class="help-val">每步 AI 思考秒數上限。0=不限時（配合固定深度和平行模式）</span></div>
+    </div>
+  </div>
 </div>
 
 <!-- New Game Modal -->
@@ -756,6 +844,17 @@ document.getElementById('btn-confirm-ai').addEventListener('click', async () => 
     'AI move used: ' + data.move;
 
   applyMoveResult(data);
+});
+
+/* ── Help modal ─────────────────────────────── */
+document.getElementById('btn-help-open').addEventListener('click', () => {
+  document.getElementById('help-overlay').classList.add('open');
+});
+document.getElementById('help-close').addEventListener('click', () => {
+  document.getElementById('help-overlay').classList.remove('open');
+});
+document.getElementById('help-overlay').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
 });
 
 /* ── New Game modal ──────────────────────────── */
