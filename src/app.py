@@ -633,7 +633,7 @@ def choose_move_by_strategy(board, team, strategy, depth=MINIMAX_DEPTH, time_lim
     return choose_minimax_move(board, team, depth=depth, time_limit=time_limit, use_nmp=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, use_parallel=use_parallel)
 
 
-def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, ab_parallel=False, uv_parallel=False):
+def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, ab_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, ab_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, uv_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, uv_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, ab_parallel=False, uv_parallel=False):
     board = Board.random_legal_board()
     game = Game(board=board)
     actual_first = random.choice(['AB', 'UV']) if first_team == 'random' else first_team
@@ -660,8 +660,10 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
             nmp       = ab_nmp     if team == 'AB' else uv_nmp
             nmp_r_val = ab_nmp_r   if team == 'AB' else uv_nmp_r
             lmr       = ab_lmr     if team == 'AB' else uv_lmr
+            lmr_min   = ab_lmr_min_depth  if team == 'AB' else uv_lmr_min_depth
+            lmr_idx   = ab_lmr_move_index if team == 'AB' else uv_lmr_move_index
             parallel  = ab_parallel if team == 'AB' else uv_parallel
-            move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp, nmp_r=nmp_r_val, use_lmr=lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, use_parallel=parallel)
+            move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp, nmp_r=nmp_r_val, use_lmr=lmr, lmr_min_depth=lmr_min, lmr_move_index=lmr_idx, use_parallel=parallel)
             if move is not None:
                 from_pos, to_pos = move
                 result = game.make_move(from_pos, to_pos)
@@ -695,7 +697,7 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
     }
 
 
-def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, ab_parallel=False, uv_parallel=False):
+def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, ab_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, ab_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, uv_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, uv_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, ab_parallel=False, uv_parallel=False):
     results = {
         'games': games,
         'ab_wins': 0,
@@ -723,7 +725,7 @@ def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10,
     total_rounds = 0
 
     for i in range(games):
-        game_result = play_ai_battle_game(ab_depth, uv_depth, rounds=rounds, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp, ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r, first_team=first_team, ab_lmr=ab_lmr, uv_lmr=uv_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, ab_parallel=ab_parallel, uv_parallel=uv_parallel)
+        game_result = play_ai_battle_game(ab_depth, uv_depth, rounds=rounds, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp, ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r, first_team=first_team, ab_lmr=ab_lmr, uv_lmr=uv_lmr, ab_lmr_min_depth=ab_lmr_min_depth, ab_lmr_move_index=ab_lmr_move_index, uv_lmr_min_depth=uv_lmr_min_depth, uv_lmr_move_index=uv_lmr_move_index, ab_parallel=ab_parallel, uv_parallel=uv_parallel)
         if game_result['winner'] == 'AB':
             results['ab_wins'] += 1
         elif game_result['winner'] == 'UV':
@@ -867,8 +869,10 @@ def api_ai_battle():
     ab_lmr = bool(data.get('ab_lmr', True))
     uv_lmr = bool(data.get('uv_lmr', True))
     try:
-        lmr_min_depth  = max(2, min(int(data.get('lmr_min_depth',  DEFAULT_LMR_MIN_DEPTH)),  10))
-        lmr_move_index = max(1, min(int(data.get('lmr_move_index', DEFAULT_LMR_MOVE_INDEX)), 10))
+        ab_lmr_min_depth  = max(2, min(int(data.get('ab_lmr_min_depth',  DEFAULT_LMR_MIN_DEPTH)),  10))
+        ab_lmr_move_index = max(1, min(int(data.get('ab_lmr_move_index', DEFAULT_LMR_MOVE_INDEX)), 10))
+        uv_lmr_min_depth  = max(2, min(int(data.get('uv_lmr_min_depth',  DEFAULT_LMR_MIN_DEPTH)),  10))
+        uv_lmr_move_index = max(1, min(int(data.get('uv_lmr_move_index', DEFAULT_LMR_MOVE_INDEX)), 10))
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error': 'lmr params must be numbers.'}), 400
     ab_parallel = bool(data.get('ab_parallel', False))
@@ -893,7 +897,8 @@ def api_ai_battle():
                 ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r,
                 first_team=first_team,
                 ab_lmr=ab_lmr, uv_lmr=uv_lmr,
-                lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index,
+                ab_lmr_min_depth=ab_lmr_min_depth, ab_lmr_move_index=ab_lmr_move_index,
+                uv_lmr_min_depth=uv_lmr_min_depth, uv_lmr_move_index=uv_lmr_move_index,
                 ab_parallel=ab_parallel, uv_parallel=uv_parallel,
             )
             if gr['winner'] == 'AB':
@@ -937,7 +942,8 @@ def api_ai_battle():
             'ab_nmp': ab_nmp, 'uv_nmp': uv_nmp,
             'ab_nmp_r': ab_nmp_r, 'uv_nmp_r': uv_nmp_r,
             'ab_lmr': ab_lmr, 'uv_lmr': uv_lmr,
-            'lmr_min_depth': lmr_min_depth, 'lmr_move_index': lmr_move_index,
+            'ab_lmr_min_depth': ab_lmr_min_depth, 'ab_lmr_move_index': ab_lmr_move_index,
+            'uv_lmr_min_depth': uv_lmr_min_depth, 'uv_lmr_move_index': uv_lmr_move_index,
             'ab_parallel': ab_parallel, 'uv_parallel': uv_parallel,
             'first_team': first_team,
             'game_log': game_log,

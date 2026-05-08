@@ -338,6 +338,7 @@
       <label id="battle-ab-depth-wrap">d=<input id="battle-ab-depth" type="number" min="1" max="50" value="50"></label>
       <label id="battle-ab-nmp-wrap"><input type="checkbox" id="battle-ab-nmp" checked> NMP R=<input id="battle-ab-nmp-r" type="number" min="1" max="4" value="2" style="width:36px;"></label>
       <label id="battle-ab-lmr-wrap"><input type="checkbox" id="battle-ab-lmr" checked> LMR</label>
+      <span id="battle-ab-lmr-params-wrap" style="font-size:12px;"> min-d=<input id="battle-ab-lmr-min-depth" type="number" min="2" max="10" value="3" style="width:36px;"> start=<input id="battle-ab-lmr-move-index" type="number" min="1" max="10" value="3" style="width:36px;"></span>
       <label id="battle-ab-parallel-wrap"><input type="checkbox" id="battle-ab-parallel"> 平行</label>
     </div>
     <div class="battle-row">
@@ -351,11 +352,8 @@
       <label id="battle-uv-depth-wrap">d=<input id="battle-uv-depth" type="number" min="1" max="50" value="50"></label>
       <label id="battle-uv-nmp-wrap"><input type="checkbox" id="battle-uv-nmp" checked> NMP R=<input id="battle-uv-nmp-r" type="number" min="1" max="4" value="2" style="width:36px;"></label>
       <label id="battle-uv-lmr-wrap"><input type="checkbox" id="battle-uv-lmr" checked> LMR</label>
+      <span id="battle-uv-lmr-params-wrap" style="font-size:12px;"> min-d=<input id="battle-uv-lmr-min-depth" type="number" min="2" max="10" value="3" style="width:36px;"> start=<input id="battle-uv-lmr-move-index" type="number" min="1" max="10" value="3" style="width:36px;"></span>
       <label id="battle-uv-parallel-wrap"><input type="checkbox" id="battle-uv-parallel"> 平行</label>
-    </div>
-    <div class="battle-row" id="battle-lmr-params-row">
-      <label>LMR min-d=<input id="battle-lmr-min-depth" type="number" min="2" max="10" value="3" style="width:36px;"></label>
-      <label>start=<input id="battle-lmr-move-index" type="number" min="1" max="10" value="3" style="width:36px;"></label>
     </div>
     <div class="battle-row">
       <label>先手
@@ -429,8 +427,8 @@
     <div class="help-section">
       <div class="help-section-title">LMR — Late Move Reductions</div>
       <div class="help-row"><span class="help-key">LMR</span><span class="help-val">排序後的後段「非吃子」走法先用較淺深度搜；只有分數比當前最佳更好才補全深度</span></div>
-      <div class="help-row"><span class="help-key">min-d</span><span class="help-val">至少在第幾層深才啟用 LMR（預設 3）。太淺啟用會損失精度</span></div>
-      <div class="help-row"><span class="help-key">start</span><span class="help-val">從第幾個走法（0-based）開始縮減（預設 3）。前幾個排序較好的走法仍全深搜</span></div>
+      <div class="help-row"><span class="help-key">min-d</span><span class="help-val">至少在第幾層深才啟用 LMR（預設 3）。AB/UV 各自獨立設定，可互相比較效果</span></div>
+      <div class="help-row"><span class="help-key">start</span><span class="help-val">從第幾個走法（0-based）開始縮減（預設 3）。AB/UV 各自獨立設定</span></div>
     </div>
 
     <div class="help-section">
@@ -710,6 +708,7 @@ document.getElementById('battle-ab-strategy').addEventListener('change', functio
   document.getElementById('battle-ab-depth-wrap').style.display = show;
   document.getElementById('battle-ab-nmp-wrap').style.display = show;
   document.getElementById('battle-ab-lmr-wrap').style.display = show;
+  document.getElementById('battle-ab-lmr-params-wrap').style.display = show;
   document.getElementById('battle-ab-parallel-wrap').style.display = show;
 });
 document.getElementById('battle-uv-strategy').addEventListener('change', function () {
@@ -717,7 +716,14 @@ document.getElementById('battle-uv-strategy').addEventListener('change', functio
   document.getElementById('battle-uv-depth-wrap').style.display = show;
   document.getElementById('battle-uv-nmp-wrap').style.display = show;
   document.getElementById('battle-uv-lmr-wrap').style.display = show;
+  document.getElementById('battle-uv-lmr-params-wrap').style.display = show;
   document.getElementById('battle-uv-parallel-wrap').style.display = show;
+});
+document.getElementById('battle-ab-lmr').addEventListener('change', function () {
+  document.getElementById('battle-ab-lmr-params-wrap').style.display = this.checked ? '' : 'none';
+});
+document.getElementById('battle-uv-lmr').addEventListener('change', function () {
+  document.getElementById('battle-uv-lmr-params-wrap').style.display = this.checked ? '' : 'none';
 });
 
 document.getElementById('btn-stop-battle').addEventListener('click', async () => {
@@ -742,10 +748,12 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   const uvNmp     = document.getElementById('battle-uv-nmp').checked;
   const abNmpR    = parseInt(document.getElementById('battle-ab-nmp-r').value, 10) || 2;
   const uvNmpR    = parseInt(document.getElementById('battle-uv-nmp-r').value, 10) || 2;
-  const abLmr     = document.getElementById('battle-ab-lmr').checked;
-  const uvLmr     = document.getElementById('battle-uv-lmr').checked;
-  const lmrMinDepth   = parseInt(document.getElementById('battle-lmr-min-depth').value, 10) || 3;
-  const lmrMoveIndex  = parseInt(document.getElementById('battle-lmr-move-index').value, 10) || 3;
+  const abLmr          = document.getElementById('battle-ab-lmr').checked;
+  const uvLmr          = document.getElementById('battle-uv-lmr').checked;
+  const abLmrMinDepth  = parseInt(document.getElementById('battle-ab-lmr-min-depth').value, 10) || 3;
+  const abLmrMoveIndex = parseInt(document.getElementById('battle-ab-lmr-move-index').value, 10) || 3;
+  const uvLmrMinDepth  = parseInt(document.getElementById('battle-uv-lmr-min-depth').value, 10) || 3;
+  const uvLmrMoveIndex = parseInt(document.getElementById('battle-uv-lmr-move-index').value, 10) || 3;
   const abParallel = document.getElementById('battle-ab-parallel').checked;
   const uvParallel = document.getElementById('battle-uv-parallel').checked;
   const firstTeam = document.getElementById('battle-first-team').value;
@@ -774,7 +782,9 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
     ab_strategy: abStrategy, uv_strategy: uvStrategy,
     ab_depth: abDepth, uv_depth: uvDepth,
     ab_nmp: abNmp, uv_nmp: uvNmp, ab_nmp_r: abNmpR, uv_nmp_r: uvNmpR,
-    ab_lmr: abLmr, uv_lmr: uvLmr, lmr_min_depth: lmrMinDepth, lmr_move_index: lmrMoveIndex,
+    ab_lmr: abLmr, uv_lmr: uvLmr,
+    ab_lmr_min_depth: abLmrMinDepth, ab_lmr_move_index: abLmrMoveIndex,
+    uv_lmr_min_depth: uvLmrMinDepth, uv_lmr_move_index: uvLmrMoveIndex,
     ab_parallel: abParallel, uv_parallel: uvParallel,
     first_team: firstTeam, games,
     time_limit: Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : 0,
