@@ -728,6 +728,28 @@ document.getElementById('battle-uv-lmr').addEventListener('change', function () 
   document.getElementById('battle-uv-lmr-params-wrap').style.display = this.checked ? '' : 'none';
 });
 
+// 步層級平行 ↔ 多局並行 互斥
+function syncParallelMutex() {
+  const workers = parseInt(document.getElementById('battle-game-workers').value, 10) || 1;
+  const gameParOn = workers >= 2;
+  ['battle-ab-parallel', 'battle-uv-parallel'].forEach(id => {
+    const el = document.getElementById(id);
+    el.disabled = gameParOn;
+    el.closest('label').style.opacity = gameParOn ? '0.35' : '';
+    el.closest('label').title = gameParOn ? '多局並行已啟用，步層級平行停用' : '';
+  });
+}
+document.getElementById('battle-game-workers').addEventListener('input', syncParallelMutex);
+// 勾選步層級平行 → 多局並行重置為 1
+['battle-ab-parallel', 'battle-uv-parallel'].forEach(id => {
+  document.getElementById(id).addEventListener('change', function () {
+    if (this.checked) {
+      document.getElementById('battle-game-workers').value = 1;
+      syncParallelMutex();
+    }
+  });
+});
+
 document.getElementById('btn-stop-battle').addEventListener('click', async () => {
   document.getElementById('btn-stop-battle').disabled = true;
   document.getElementById('battle-status').textContent = '正在停止…（等待目前局完成）';
