@@ -22,6 +22,7 @@ app = Flask(
 )
 
 _game = Game()
+_battle_stop = False
 
 
 # ── pages ──────────────────────────────────────────────────────────────
@@ -822,6 +823,13 @@ def api_ask_ai():
         return jsonify({'ok': False, 'error': str(e)}), 400
 
 
+@app.route('/api/stop_battle', methods=['POST'])
+def api_stop_battle():
+    global _battle_stop
+    _battle_stop = True
+    return jsonify({'ok': True})
+
+
 @app.route('/api/ai_battle', methods=['POST'])
 def api_ai_battle():
     data = request.get_json() or {}
@@ -866,6 +874,9 @@ def api_ai_battle():
     ab_parallel = bool(data.get('ab_parallel', False))
     uv_parallel = bool(data.get('uv_parallel', False))
 
+    global _battle_stop
+    _battle_stop = False
+
     def generate():
         ab_wins = uv_wins = draws = 0
         ab_total = uv_total = total_rounds = 0
@@ -873,6 +884,8 @@ def api_ai_battle():
         last_gr = None
 
         for i in range(games):
+            if _battle_stop:
+                break
             gr = play_ai_battle_game(
                 ab_depth, uv_depth, rounds=20, time_limit=time_limit,
                 ab_strategy=ab_strategy, uv_strategy=uv_strategy,
@@ -906,10 +919,12 @@ def api_ai_battle():
                 **entry,
             }) + '\n'
 
-        n = games
+        played = ab_wins + uv_wins + draws
+        n = played if played > 0 else 1
         summary = {
             'type': 'done', 'ok': True,
-            'games': n,
+            'games': played, 'games_requested': games,
+            'stopped': _battle_stop,
             'ab_wins': ab_wins, 'uv_wins': uv_wins, 'draws': draws,
             'ab_win_rate':  round(ab_wins / n * 100, 1),
             'uv_win_rate':  round(uv_wins / n * 100, 1),

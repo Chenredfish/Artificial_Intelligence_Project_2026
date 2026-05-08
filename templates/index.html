@@ -368,6 +368,7 @@
       <label>場次 <input id="battle-games" type="number" min="1" max="200" value="10"></label>
       <label>時限(s) <input id="battle-time-limit" type="number" min="0" step="1" value="60"></label>
       <button class="btn" id="btn-ai-battle" style="padding:6px 10px;">Run</button>
+      <button class="btn" id="btn-stop-battle" style="padding:6px 10px; display:none; background:#e74c3c; color:#fff;">停止</button>
     </div>
 
     <div id="battle-status" style="font-size:12px; margin-top:4px; color:#6c7086;">等待開始</div>
@@ -719,10 +720,18 @@ document.getElementById('battle-uv-strategy').addEventListener('change', functio
   document.getElementById('battle-uv-parallel-wrap').style.display = show;
 });
 
+document.getElementById('btn-stop-battle').addEventListener('click', async () => {
+  document.getElementById('btn-stop-battle').disabled = true;
+  document.getElementById('battle-status').textContent = '正在停止…（等待目前局完成）';
+  await fetch('/api/stop_battle', {method: 'POST'});
+});
+
 document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   if (!state) return;
 
-  document.getElementById('btn-ai-battle').disabled = true;
+  document.getElementById('btn-ai-battle').style.display = 'none';
+  document.getElementById('btn-stop-battle').style.display = '';
+  document.getElementById('btn-stop-battle').disabled = false;
   document.getElementById('battle-summary').style.display = 'none';
 
   const abStrategy = document.getElementById('battle-ab-strategy').value;
@@ -806,13 +815,15 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
     }
   } catch (e) {
     clearInterval(runTimer);
-    document.getElementById('btn-ai-battle').disabled = false;
+    document.getElementById('btn-ai-battle').style.display = '';
+    document.getElementById('btn-stop-battle').style.display = 'none';
     statusEl.textContent = '連線中斷';
     return;
   }
 
   clearInterval(runTimer);
-  document.getElementById('btn-ai-battle').disabled = false;
+  document.getElementById('btn-ai-battle').style.display = '';
+  document.getElementById('btn-stop-battle').style.display = 'none';
 
   if (!finalData || !finalData.ok) {
     statusEl.textContent = '錯誤：' + (finalData ? finalData.error : '未知');
@@ -845,7 +856,11 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   document.getElementById('battle-ab-path').textContent = (data.ab_moves || []).join('\n');
   document.getElementById('battle-uv-path').textContent = (data.uv_moves || []).join('\n');
 
-  statusEl.textContent = `完成 ${data.games} 局　耗時 ${fmtTimer()}`;
+  if (data.stopped) {
+    statusEl.textContent = `已中止 (${data.games}/${data.games_requested} 局完成)　耗時 ${fmtTimer()}`;
+  } else {
+    statusEl.textContent = `完成 ${data.games} 局　耗時 ${fmtTimer()}`;
+  }
 });
 
 document.getElementById('btn-confirm-ai').addEventListener('click', async () => {
