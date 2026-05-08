@@ -514,18 +514,26 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
 
 
 def _root_move_worker(args):
-    """Top-level worker for ProcessPoolExecutor — evaluates one root move."""
-    board_grid, from_pos, to_pos, search_depth, team, opponent, use_nmp, nmp_r, use_lmr, lmr_min_depth, lmr_move_index = args
+    """Top-level worker for ProcessPoolExecutor — evaluates one root move with iterative deepening."""
+    board_grid, from_pos, to_pos, max_depth, team, opponent, use_nmp, nmp_r, use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit = args
     child = Board()
     child._grid = [list(row) for row in board_grid]
     child.apply_move(from_pos, to_pos)
     tt = {}
     hh = defaultdict(int)
-    value = minimax(child, opponent, search_depth, team, -float('inf'), float('inf'),
-                    None, None, tt, hh,
-                    allow_null=use_nmp, nmp_r=nmp_r,
-                    use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
-    return (value, from_pos, to_pos)
+    best_value = -float('inf')
+    for d in range(1, max_depth + 1):
+        if time_limit is not None and start_time is not None and time.time() - start_time >= time_limit:
+            break
+        try:
+            val = minimax(child, opponent, d, team, -float('inf'), float('inf'),
+                          start_time, time_limit, tt, hh,
+                          allow_null=use_nmp, nmp_r=nmp_r,
+                          use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
+            best_value = val
+        except SearchTimeout:
+            break
+    return (best_value, from_pos, to_pos)
 
 
 def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False):
@@ -536,13 +544,15 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
     if time_limit is not None and time_limit <= 0:
         time_limit = None
 
-    # Parallel root search — subprocesses can't share a timer, so only without time_limit
-    if use_parallel and time_limit is None and depth > 1:
+    start_time = time.time()
+
+    # Parallel root search: each worker does iterative deepening with the shared deadline
+    if use_parallel and depth > 1:
         opponent = 'UV' if team == 'AB' else 'AB'
         board_grid = tuple(tuple(row) for row in board._grid)
         args_list = [
-            (board_grid, fp, tp, depth - 1, team, opponent, use_nmp, nmp_r,
-             use_lmr, lmr_min_depth, lmr_move_index)
+            (board_grid, fp, tp, depth, team, opponent, use_nmp, nmp_r,
+             use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit)
             for fp, tp in moves
         ]
         with ProcessPoolExecutor() as executor:
@@ -550,8 +560,6 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
         best_value = max(v for v, _, _ in results)
         best_moves = [(fp, tp) for v, fp, tp in results if v == best_value]
         return random.choice(best_moves)
-
-    start_time = time.time()
     opponent = 'UV' if team == 'AB' else 'AB'
 
     fallback_move = random.choice(moves)

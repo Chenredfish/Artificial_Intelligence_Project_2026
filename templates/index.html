@@ -434,7 +434,7 @@
 
     <div class="help-section">
       <div class="help-section-title">平行</div>
-      <div class="help-row"><span class="help-key">平行</span><span class="help-val">用多顆 CPU 核心同時計算所有 root 走法。僅在時限=0（不限時）時有效；有時限時自動回退 sequential</span></div>
+      <div class="help-row"><span class="help-key">平行</span><span class="help-val">用多顆 CPU 核心同時計算所有 root 走法。每個 worker 在相同的時限內自行做 iterative deepening，到時間自動停止。有時限（如 60s）或無時限均有效</span></div>
     </div>
 
     <div class="help-section">

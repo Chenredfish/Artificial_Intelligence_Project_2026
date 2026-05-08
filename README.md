@@ -77,9 +77,10 @@ Current search stack (all active by default):
 
 ### Parallel mode notes
 
-- **Parallel checkbox** is off by default. Enable when using fixed depth (no time limit) to get the full multi-core speedup.
-- Parallel mode skips iterative deepening — each root move is evaluated at `depth-1` in its own process.
-- Incompatible with time limit mode (subprocesses cannot share a timeout signal).
+- **Parallel checkbox** is off by default. Enable to distribute root moves across CPU cores.
+- Each worker process does its own iterative deepening within the same shared time budget.
+- Works with both time-limited mode (60 s) and no-limit mode (depth cap applies).
+- No shared transposition table between workers — slightly weaker than sequential at the same depth ceiling, but covers more root moves simultaneously.
 - Works on Windows (spawn), macOS (spawn, Python 3.8+), and Linux (fork).
 
 ### Benchmark script
