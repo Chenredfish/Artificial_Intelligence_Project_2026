@@ -2,7 +2,7 @@ import os
 import random
 import time
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import json
 from flask import Flask, jsonify, request, render_template, Response, stream_with_context
@@ -773,6 +773,24 @@ def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10,
     return results
 
 
+def _game_worker(args):
+    """Module-level worker for game-level parallelism. Move-level parallel is forced OFF."""
+    (game_idx, ab_depth, uv_depth, time_limit, ab_strategy, uv_strategy,
+     ab_nmp, uv_nmp, ab_nmp_r, uv_nmp_r, first_team,
+     ab_lmr, uv_lmr, ab_lmr_min_depth, ab_lmr_move_index,
+     uv_lmr_min_depth, uv_lmr_move_index) = args
+    gr = play_ai_battle_game(
+        ab_depth, uv_depth, rounds=20, time_limit=time_limit,
+        ab_strategy=ab_strategy, uv_strategy=uv_strategy,
+        ab_nmp=ab_nmp, uv_nmp=uv_nmp, ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r,
+        first_team=first_team, ab_lmr=ab_lmr, uv_lmr=uv_lmr,
+        ab_lmr_min_depth=ab_lmr_min_depth, ab_lmr_move_index=ab_lmr_move_index,
+        uv_lmr_min_depth=uv_lmr_min_depth, uv_lmr_move_index=uv_lmr_move_index,
+        ab_parallel=False, uv_parallel=False,
+    )
+    return game_idx, gr
+
+
 @app.route('/api/ask_ai', methods=['POST'])
 def api_ask_ai():
     data = request.get_json() or {}
@@ -877,6 +895,10 @@ def api_ai_battle():
         return jsonify({'ok': False, 'error': 'lmr params must be numbers.'}), 400
     ab_parallel = bool(data.get('ab_parallel', False))
     uv_parallel = bool(data.get('uv_parallel', False))
+    try:
+        game_workers = max(1, min(int(data.get('game_workers', 1)), 8))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error': 'game_workers must be a number.'}), 400
 
     global _battle_stop
     _battle_stop = False
@@ -887,42 +909,88 @@ def api_ai_battle():
         game_log = []
         last_gr = None
 
-        for i in range(games):
-            if _battle_stop:
-                break
-            gr = play_ai_battle_game(
-                ab_depth, uv_depth, rounds=20, time_limit=time_limit,
-                ab_strategy=ab_strategy, uv_strategy=uv_strategy,
-                ab_nmp=ab_nmp, uv_nmp=uv_nmp,
-                ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r,
-                first_team=first_team,
-                ab_lmr=ab_lmr, uv_lmr=uv_lmr,
-                ab_lmr_min_depth=ab_lmr_min_depth, ab_lmr_move_index=ab_lmr_move_index,
-                uv_lmr_min_depth=uv_lmr_min_depth, uv_lmr_move_index=uv_lmr_move_index,
-                ab_parallel=ab_parallel, uv_parallel=uv_parallel,
-            )
-            if gr['winner'] == 'AB':
-                ab_wins += 1
-            elif gr['winner'] == 'UV':
-                uv_wins += 1
-            else:
-                draws += 1
-            ab_total += gr['ab_score']
-            uv_total += gr['uv_score']
-            total_rounds += gr['rounds']
-            entry = {
-                'game': i + 1, 'winner': gr['winner'],
-                'ab_score': gr['ab_score'], 'uv_score': gr['uv_score'],
-                'rounds': gr['rounds'], 'first_team': gr['first_team'],
-            }
-            game_log.append(entry)
-            last_gr = gr
-            yield json.dumps({
-                'type': 'progress',
-                'game': i + 1, 'total': games,
-                'ab_wins': ab_wins, 'uv_wins': uv_wins, 'draws': draws,
-                **entry,
-            }) + '\n'
+        if game_workers > 1:
+            # Game-level parallel: run multiple games simultaneously.
+            # Move-level parallel is forced OFF inside _game_worker (no nested pools on Windows).
+            _wargs = [
+                (i, ab_depth, uv_depth, time_limit, ab_strategy, uv_strategy,
+                 ab_nmp, uv_nmp, ab_nmp_r, uv_nmp_r, first_team,
+                 ab_lmr, uv_lmr, ab_lmr_min_depth, ab_lmr_move_index,
+                 uv_lmr_min_depth, uv_lmr_move_index)
+                for i in range(games)
+            ]
+            completed_count = 0
+            with ProcessPoolExecutor(max_workers=game_workers) as executor:
+                all_futures = [executor.submit(_game_worker, a) for a in _wargs]
+                for fut in as_completed(all_futures):
+                    try:
+                        _, gr = fut.result()
+                    except Exception:
+                        continue
+                    completed_count += 1
+                    if gr['winner'] == 'AB':
+                        ab_wins += 1
+                    elif gr['winner'] == 'UV':
+                        uv_wins += 1
+                    else:
+                        draws += 1
+                    ab_total += gr['ab_score']
+                    uv_total += gr['uv_score']
+                    total_rounds += gr['rounds']
+                    entry = {
+                        'game': completed_count, 'winner': gr['winner'],
+                        'ab_score': gr['ab_score'], 'uv_score': gr['uv_score'],
+                        'rounds': gr['rounds'], 'first_team': gr['first_team'],
+                    }
+                    game_log.append(entry)
+                    last_gr = gr
+                    yield json.dumps({
+                        'type': 'progress',
+                        'game': completed_count, 'total': games,
+                        'ab_wins': ab_wins, 'uv_wins': uv_wins, 'draws': draws,
+                        **entry,
+                    }) + '\n'
+                    if _battle_stop:
+                        for f in all_futures:
+                            f.cancel()
+                        break
+        else:
+            for i in range(games):
+                if _battle_stop:
+                    break
+                gr = play_ai_battle_game(
+                    ab_depth, uv_depth, rounds=20, time_limit=time_limit,
+                    ab_strategy=ab_strategy, uv_strategy=uv_strategy,
+                    ab_nmp=ab_nmp, uv_nmp=uv_nmp,
+                    ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r,
+                    first_team=first_team,
+                    ab_lmr=ab_lmr, uv_lmr=uv_lmr,
+                    ab_lmr_min_depth=ab_lmr_min_depth, ab_lmr_move_index=ab_lmr_move_index,
+                    uv_lmr_min_depth=uv_lmr_min_depth, uv_lmr_move_index=uv_lmr_move_index,
+                    ab_parallel=ab_parallel, uv_parallel=uv_parallel,
+                )
+                if gr['winner'] == 'AB':
+                    ab_wins += 1
+                elif gr['winner'] == 'UV':
+                    uv_wins += 1
+                else:
+                    draws += 1
+                ab_total += gr['ab_score']
+                uv_total += gr['uv_score']
+                total_rounds += gr['rounds']
+                entry = {
+                    'game': i + 1, 'winner': gr['winner'],
+                    'ab_score': gr['ab_score'], 'uv_score': gr['uv_score'],
+                    'rounds': gr['rounds'], 'first_team': gr['first_team'],
+                }
+                game_log.append(entry)
+                last_gr = gr
+                yield json.dumps({
+                    'type': 'progress',
+                    'game': i + 1, 'total': games,
+                    'ab_wins': ab_wins, 'uv_wins': uv_wins, 'draws': draws,
+                    **entry,
+                }) + '\n'
 
         played = ab_wins + uv_wins + draws
         n = played if played > 0 else 1
@@ -945,6 +1013,7 @@ def api_ai_battle():
             'ab_lmr_min_depth': ab_lmr_min_depth, 'ab_lmr_move_index': ab_lmr_move_index,
             'uv_lmr_min_depth': uv_lmr_min_depth, 'uv_lmr_move_index': uv_lmr_move_index,
             'ab_parallel': ab_parallel, 'uv_parallel': uv_parallel,
+            'game_workers': game_workers,
             'first_team': first_team,
             'game_log': game_log,
         }
