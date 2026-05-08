@@ -365,6 +365,7 @@
       </label>
       <label>場次 <input id="battle-games" type="number" min="1" max="200" value="10"></label>
       <label>時限(s) <input id="battle-time-limit" type="number" min="0" step="1" value="60"></label>
+      <label>多局並行 <input id="battle-game-workers" type="number" min="1" max="8" value="1" title="同時跑幾局（1=關閉）。啟用時步層級平行自動停用。"></label>
       <button class="btn" id="btn-ai-battle" style="padding:6px 10px;">Run</button>
       <button class="btn" id="btn-stop-battle" style="padding:6px 10px; display:none; background:#e74c3c; color:#fff;">停止</button>
     </div>
@@ -441,6 +442,7 @@
       <div class="help-row"><span class="help-key">先手</span><span class="help-val">哪隊先走。設「隨機」可消除先手偏差，讓結果更有統計意義</span></div>
       <div class="help-row"><span class="help-key">場次</span><span class="help-val">總共跑幾局（1–200）。30 局以上才有統計顯著性</span></div>
       <div class="help-row"><span class="help-key">時限(s)</span><span class="help-val">每步 AI 思考秒數上限。0=不限時（配合固定深度和平行模式）</span></div>
+      <div class="help-row"><span class="help-key">多局並行</span><span class="help-val">同時跑幾局（1=關閉，2–8=開啟）。開啟時步層級平行自動停用。適合 時限=0 固定深度測試，預期 ~4× 加速。測試 3（平行 vs 循序比較）必須設為 1</span></div>
     </div>
   </div>
 </div>
@@ -756,9 +758,10 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   const uvLmrMoveIndex = parseInt(document.getElementById('battle-uv-lmr-move-index').value, 10) || 3;
   const abParallel = document.getElementById('battle-ab-parallel').checked;
   const uvParallel = document.getElementById('battle-uv-parallel').checked;
-  const firstTeam = document.getElementById('battle-first-team').value;
-  const games     = parseInt(document.getElementById('battle-games').value, 10) || 10;
-  const timeLimit = parseFloat(document.getElementById('battle-time-limit').value);
+  const firstTeam  = document.getElementById('battle-first-team').value;
+  const games      = parseInt(document.getElementById('battle-games').value, 10) || 10;
+  const timeLimit  = parseFloat(document.getElementById('battle-time-limit').value);
+  const gameWorkers = parseInt(document.getElementById('battle-game-workers').value, 10) || 1;
 
   // 計時器 + 即時進度
   let elapsed = 0, doneGames = 0;
@@ -786,6 +789,7 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
     ab_lmr_min_depth: abLmrMinDepth, ab_lmr_move_index: abLmrMoveIndex,
     uv_lmr_min_depth: uvLmrMinDepth, uv_lmr_move_index: uvLmrMoveIndex,
     ab_parallel: abParallel, uv_parallel: uvParallel,
+    game_workers: gameWorkers,
     first_team: firstTeam, games,
     time_limit: Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : 0,
   };
