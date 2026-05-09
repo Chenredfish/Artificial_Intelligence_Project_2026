@@ -23,6 +23,7 @@ app = Flask(
 
 _game = Game()
 _battle_stop = False
+_last_depth_reached = 0
 
 
 # ── pages ──────────────────────────────────────────────────────────────
@@ -579,6 +580,8 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
     transposition_table = {}
     history_heuristic = defaultdict(int)
     prev_best_value = None  # tracks last completed depth score for aspiration window
+    global _last_depth_reached
+    _last_depth_reached = 0
 
     for current_depth in range(1, depth + 1):
         if time_limit is not None and time.time() - start_time >= time_limit:
@@ -636,6 +639,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
         prev_best_value = best_value
         if current_moves:
             last_completed_moves = current_moves
+            _last_depth_reached = current_depth
             root_key = (board_key(board), team, team)
             transposition_table[root_key] = {
                 'depth': current_depth,
