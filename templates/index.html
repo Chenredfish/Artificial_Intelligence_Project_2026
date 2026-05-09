@@ -339,6 +339,8 @@
       <label id="battle-ab-nmp-wrap"><input type="checkbox" id="battle-ab-nmp" checked> NMP R=<input id="battle-ab-nmp-r" type="number" min="1" max="4" value="2" style="width:36px;"></label>
       <label id="battle-ab-lmr-wrap"><input type="checkbox" id="battle-ab-lmr" checked> LMR</label>
       <span id="battle-ab-lmr-params-wrap" style="font-size:12px;"> min-d=<input id="battle-ab-lmr-min-depth" type="number" min="2" max="10" value="3" style="width:36px;"> start=<input id="battle-ab-lmr-move-index" type="number" min="1" max="10" value="3" style="width:36px;"></span>
+      <label id="battle-ab-pvs-wrap"><input type="checkbox" id="battle-ab-pvs" checked> PVS</label>
+      <label id="battle-ab-asp-wrap"><input type="checkbox" id="battle-ab-asp" checked> ASP W=<input id="battle-ab-asp-w" type="number" min="5" max="500" value="50" style="width:44px;"></label>
       <label id="battle-ab-parallel-wrap"><input type="checkbox" id="battle-ab-parallel"> 平行</label>
     </div>
     <div class="battle-row">
@@ -353,6 +355,8 @@
       <label id="battle-uv-nmp-wrap"><input type="checkbox" id="battle-uv-nmp" checked> NMP R=<input id="battle-uv-nmp-r" type="number" min="1" max="4" value="2" style="width:36px;"></label>
       <label id="battle-uv-lmr-wrap"><input type="checkbox" id="battle-uv-lmr" checked> LMR</label>
       <span id="battle-uv-lmr-params-wrap" style="font-size:12px;"> min-d=<input id="battle-uv-lmr-min-depth" type="number" min="2" max="10" value="3" style="width:36px;"> start=<input id="battle-uv-lmr-move-index" type="number" min="1" max="10" value="3" style="width:36px;"></span>
+      <label id="battle-uv-pvs-wrap"><input type="checkbox" id="battle-uv-pvs" checked> PVS</label>
+      <label id="battle-uv-asp-wrap"><input type="checkbox" id="battle-uv-asp" checked> ASP W=<input id="battle-uv-asp-w" type="number" min="5" max="500" value="50" style="width:44px;"></label>
       <label id="battle-uv-parallel-wrap"><input type="checkbox" id="battle-uv-parallel"> 平行</label>
     </div>
     <div class="battle-row">
@@ -430,6 +434,19 @@
       <div class="help-row"><span class="help-key">LMR</span><span class="help-val">排序後的後段「非吃子」走法先用較淺深度搜；只有分數比當前最佳更好才補全深度</span></div>
       <div class="help-row"><span class="help-key">min-d</span><span class="help-val">至少在第幾層深才啟用 LMR（預設 3）。AB/UV 各自獨立設定，可互相比較效果</span></div>
       <div class="help-row"><span class="help-key">start</span><span class="help-val">從第幾個走法（0-based）開始縮減（預設 3）。AB/UV 各自獨立設定</span></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">PVS — Principal Variation Search</div>
+      <div class="help-row"><span class="help-key">PVS</span><span class="help-val">對排序後第 2 個以後（非 LMR）走法先用零窗口（alpha, alpha+1）做「哨兵搜索」；只有哨兵結果落在 (alpha, beta) 之間才補全窗口重搜。減少無效搜索，分支因子越大效益越顯著</span></div>
+      <div class="help-row"><span class="help-key">衝突</span><span class="help-val">與 LMR 不衝突（兩者處理不同走法）。平行模式下仍有效（每個 worker 內部照常使用 PVS）</span></div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">ASP — Aspiration Window</div>
+      <div class="help-row"><span class="help-key">ASP</span><span class="help-val">迭代加深時以上一層的最佳分數 ±W 為初始窗口搜索；若結果超出範圍（fail-low/high）再用全窗口重搜。縮小搜索空間，加快深層迭代速度</span></div>
+      <div class="help-row"><span class="help-key">W=</span><span class="help-val">Aspiration Window 半寬（預設 50）。太小（如 5）→ 頻繁 fail → 重搜多 → 變慢；太大（如 200）→ 幾乎等於全窗口 → 無效益。50 為合理起點</span></div>
+      <div class="help-row"><span class="help-key">衝突</span><span class="help-val">平行模式（步層級）下無效：平行路徑繞過 ID loop，ASP 不會被執行。啟用步層級平行時 ASP 控制自動灰掉</span></div>
     </div>
 
     <div class="help-section">
@@ -711,6 +728,8 @@ document.getElementById('battle-ab-strategy').addEventListener('change', functio
   document.getElementById('battle-ab-nmp-wrap').style.display = show;
   document.getElementById('battle-ab-lmr-wrap').style.display = show;
   document.getElementById('battle-ab-lmr-params-wrap').style.display = show;
+  document.getElementById('battle-ab-pvs-wrap').style.display = show;
+  document.getElementById('battle-ab-asp-wrap').style.display = show;
   document.getElementById('battle-ab-parallel-wrap').style.display = show;
 });
 document.getElementById('battle-uv-strategy').addEventListener('change', function () {
@@ -719,6 +738,8 @@ document.getElementById('battle-uv-strategy').addEventListener('change', functio
   document.getElementById('battle-uv-nmp-wrap').style.display = show;
   document.getElementById('battle-uv-lmr-wrap').style.display = show;
   document.getElementById('battle-uv-lmr-params-wrap').style.display = show;
+  document.getElementById('battle-uv-pvs-wrap').style.display = show;
+  document.getElementById('battle-uv-asp-wrap').style.display = show;
   document.getElementById('battle-uv-parallel-wrap').style.display = show;
 });
 document.getElementById('battle-ab-lmr').addEventListener('change', function () {
@@ -728,7 +749,7 @@ document.getElementById('battle-uv-lmr').addEventListener('change', function () 
   document.getElementById('battle-uv-lmr-params-wrap').style.display = this.checked ? '' : 'none';
 });
 
-// 步層級平行 ↔ 多局並行 互斥
+// 步層級平行 ↔ 多局並行 互斥；步層級平行啟用時 ASP 無效（平行繞過 ID loop）
 function syncParallelMutex() {
   const workers = parseInt(document.getElementById('battle-game-workers').value, 10) || 1;
   const gameParOn = workers >= 2;
@@ -738,15 +759,27 @@ function syncParallelMutex() {
     el.closest('label').style.opacity = gameParOn ? '0.35' : '';
     el.closest('label').title = gameParOn ? '多局並行已啟用，步層級平行停用' : '';
   });
+  // 步層級平行開啟時 ASP 灰掉（平行模式繞過 ID loop，Aspiration Window 無作用）
+  ['ab', 'uv'].forEach(t => {
+    const parChecked = document.getElementById(`battle-${t}-parallel`).checked;
+    const aspWrap = document.getElementById(`battle-${t}-asp-wrap`);
+    const aspCb   = document.getElementById(`battle-${t}-asp`);
+    const aspW    = document.getElementById(`battle-${t}-asp-w`);
+    const disabled = gameParOn || parChecked;
+    aspCb.disabled = disabled;
+    aspW.disabled  = disabled;
+    aspWrap.style.opacity = disabled ? '0.35' : '';
+    aspWrap.title = disabled ? '平行模式不使用 Aspiration Window' : '';
+  });
 }
 document.getElementById('battle-game-workers').addEventListener('input', syncParallelMutex);
-// 勾選步層級平行 → 多局並行重置為 1
+// 勾選步層級平行 → 多局並行重置為 1；更新 ASP 狀態
 ['battle-ab-parallel', 'battle-uv-parallel'].forEach(id => {
   document.getElementById(id).addEventListener('change', function () {
     if (this.checked) {
       document.getElementById('battle-game-workers').value = 1;
-      syncParallelMutex();
     }
+    syncParallelMutex();
   });
 });
 
@@ -780,6 +813,12 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   const uvLmrMoveIndex = parseInt(document.getElementById('battle-uv-lmr-move-index').value, 10) || 3;
   const abParallel = document.getElementById('battle-ab-parallel').checked;
   const uvParallel = document.getElementById('battle-uv-parallel').checked;
+  const abPvs      = document.getElementById('battle-ab-pvs').checked;
+  const uvPvs      = document.getElementById('battle-uv-pvs').checked;
+  const abAsp      = document.getElementById('battle-ab-asp').checked;
+  const uvAsp      = document.getElementById('battle-uv-asp').checked;
+  const abAspW     = parseInt(document.getElementById('battle-ab-asp-w').value, 10) || 50;
+  const uvAspW     = parseInt(document.getElementById('battle-uv-asp-w').value, 10) || 50;
   const firstTeam  = document.getElementById('battle-first-team').value;
   const games      = parseInt(document.getElementById('battle-games').value, 10) || 10;
   const timeLimit  = parseFloat(document.getElementById('battle-time-limit').value);
@@ -811,6 +850,8 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
     ab_lmr_min_depth: abLmrMinDepth, ab_lmr_move_index: abLmrMoveIndex,
     uv_lmr_min_depth: uvLmrMinDepth, uv_lmr_move_index: uvLmrMoveIndex,
     ab_parallel: abParallel, uv_parallel: uvParallel,
+    ab_pvs: abPvs, uv_pvs: uvPvs,
+    ab_asp: abAsp, uv_asp: uvAsp, ab_asp_window: abAspW, uv_asp_window: uvAspW,
     game_workers: gameWorkers,
     first_team: firstTeam, games,
     time_limit: Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : 0,

@@ -407,7 +407,7 @@ def quiescence_search(board, team, maximizing_team, alpha, beta, start_time=None
     return alpha
 
 
-def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float('inf'), start_time=None, time_limit=None, transposition_table=None, history_heuristic=None, allow_null=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX):
+def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float('inf'), start_time=None, time_limit=None, transposition_table=None, history_heuristic=None, allow_null=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_pvs=True):
     if time_limit is not None and start_time is not None:
         if time.time() - start_time >= time_limit:
             raise SearchTimeout()
@@ -446,7 +446,8 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
                                    alpha, beta, start_time, time_limit,
                                    transposition_table, history_heuristic,
                                    allow_null=False, nmp_r=nmp_r,
-                                   use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
+                                   use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index,
+                                   use_pvs=use_pvs)
                 if null_val >= beta:
                     return beta
             except SearchTimeout:
@@ -455,7 +456,8 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
     _mm_kwargs = dict(start_time=start_time, time_limit=time_limit,
                       transposition_table=transposition_table, history_heuristic=history_heuristic,
                       allow_null=allow_null, nmp_r=nmp_r,
-                      use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
+                      use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index,
+                      use_pvs=use_pvs)
 
     if team == maximizing_team:
         best = -float('inf')
@@ -478,10 +480,13 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
                 if value > alpha:
                     value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
             else:
-                # PVS: full depth with zero window — only window is narrowed, depth is not cut,
-                # so the scout is reliable and the re-search condition is trustworthy.
-                value = minimax(child, opponent, depth - 1, maximizing_team, alpha, alpha + 1, **_mm_kwargs)
-                if alpha < value < beta:
+                if use_pvs:
+                    # PVS: full depth with zero window — only window is narrowed, depth is not cut,
+                    # so the scout is reliable and the re-search condition is trustworthy.
+                    value = minimax(child, opponent, depth - 1, maximizing_team, alpha, alpha + 1, **_mm_kwargs)
+                    if alpha < value < beta:
+                        value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
+                else:
                     value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
             if value > best:
                 best = value
@@ -528,7 +533,7 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
 
 def _root_move_worker(args):
     """Top-level worker for ProcessPoolExecutor — evaluates one root move with iterative deepening."""
-    board_grid, from_pos, to_pos, max_depth, team, opponent, use_nmp, nmp_r, use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit = args
+    board_grid, from_pos, to_pos, max_depth, team, opponent, use_nmp, nmp_r, use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit, use_pvs = args
     child = Board()
     child._grid = [list(row) for row in board_grid]
     child.apply_move(from_pos, to_pos)
@@ -542,14 +547,15 @@ def _root_move_worker(args):
             val = minimax(child, opponent, d, team, -float('inf'), float('inf'),
                           start_time, time_limit, tt, hh,
                           allow_null=use_nmp, nmp_r=nmp_r,
-                          use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
+                          use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index,
+                          use_pvs=use_pvs)
             best_value = val
         except SearchTimeout:
             break
     return (best_value, from_pos, to_pos)
 
 
-def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False):
+def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False, use_asp=True, asp_window=ASPIRATION_WINDOW, use_pvs=True):
     moves = board.all_legal_moves(team)
     if not moves:
         return None
@@ -565,7 +571,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
         board_grid = tuple(tuple(row) for row in board._grid)
         args_list = [
             (board_grid, fp, tp, depth, team, opponent, use_nmp, nmp_r,
-             use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit)
+             use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit, use_pvs)
             for fp, tp in moves
         ]
         with ProcessPoolExecutor() as executor:
@@ -588,9 +594,9 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
             break
 
         # Aspiration window: use narrow bounds around previous depth's score
-        if prev_best_value is not None and current_depth > 2:
-            asp_alpha = prev_best_value - ASPIRATION_WINDOW
-            asp_beta  = prev_best_value + ASPIRATION_WINDOW
+        if use_asp and prev_best_value is not None and current_depth > 2:
+            asp_alpha = prev_best_value - asp_window
+            asp_beta  = prev_best_value + asp_window
         else:
             asp_alpha, asp_beta = -float('inf'), float('inf')
 
@@ -604,7 +610,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
                     raise SearchTimeout()
                 child = board.copy()
                 child.apply_move(from_pos, to_pos)
-                value = minimax(child, opponent, current_depth - 1, team, asp_alpha, asp_beta, start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
+                value = minimax(child, opponent, current_depth - 1, team, asp_alpha, asp_beta, start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, use_pvs=use_pvs)
                 if value > best_value:
                     best_value = value
                     current_moves = [(from_pos, to_pos)]
@@ -624,7 +630,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
                             raise SearchTimeout()
                         child = board.copy()
                         child.apply_move(from_pos, to_pos)
-                        value = minimax(child, opponent, current_depth - 1, team, -float('inf'), float('inf'), start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
+                        value = minimax(child, opponent, current_depth - 1, team, -float('inf'), float('inf'), start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, use_pvs=use_pvs)
                         if value > retry_value:
                             retry_value = value
                             retry_moves = [(from_pos, to_pos)]
@@ -671,16 +677,16 @@ def choose_greedy_move(board, team):
     return random.choice(moves)
 
 
-def choose_move_by_strategy(board, team, strategy, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False):
+def choose_move_by_strategy(board, team, strategy, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False, use_asp=True, asp_window=ASPIRATION_WINDOW, use_pvs=True):
     if strategy == 'random':
         moves = board.all_legal_moves(team)
         return random.choice(moves) if moves else None
     if strategy == 'greedy':
         return choose_greedy_move(board, team)
-    return choose_minimax_move(board, team, depth=depth, time_limit=time_limit, use_nmp=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, use_parallel=use_parallel)
+    return choose_minimax_move(board, team, depth=depth, time_limit=time_limit, use_nmp=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, use_parallel=use_parallel, use_asp=use_asp, asp_window=asp_window, use_pvs=use_pvs)
 
 
-def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, ab_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, ab_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, uv_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, uv_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, ab_parallel=False, uv_parallel=False):
+def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, ab_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, ab_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, uv_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, uv_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, ab_parallel=False, uv_parallel=False, ab_asp=True, uv_asp=True, ab_asp_window=ASPIRATION_WINDOW, uv_asp_window=ASPIRATION_WINDOW, ab_pvs=True, uv_pvs=True):
     board = Board.random_legal_board()
     game = Game(board=board)
     actual_first = random.choice(['AB', 'UV']) if first_team == 'random' else first_team
@@ -702,15 +708,18 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
             game.current_team = team
             if not game.board.all_legal_moves(team):
                 continue
-            strategy = ab_strategy if team == 'AB' else uv_strategy
-            depth    = ab_depth    if team == 'AB' else uv_depth
-            nmp       = ab_nmp     if team == 'AB' else uv_nmp
-            nmp_r_val = ab_nmp_r   if team == 'AB' else uv_nmp_r
-            lmr       = ab_lmr     if team == 'AB' else uv_lmr
+            strategy  = ab_strategy if team == 'AB' else uv_strategy
+            depth     = ab_depth    if team == 'AB' else uv_depth
+            nmp       = ab_nmp      if team == 'AB' else uv_nmp
+            nmp_r_val = ab_nmp_r    if team == 'AB' else uv_nmp_r
+            lmr       = ab_lmr      if team == 'AB' else uv_lmr
             lmr_min   = ab_lmr_min_depth  if team == 'AB' else uv_lmr_min_depth
             lmr_idx   = ab_lmr_move_index if team == 'AB' else uv_lmr_move_index
             parallel  = ab_parallel if team == 'AB' else uv_parallel
-            move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp, nmp_r=nmp_r_val, use_lmr=lmr, lmr_min_depth=lmr_min, lmr_move_index=lmr_idx, use_parallel=parallel)
+            asp       = ab_asp      if team == 'AB' else uv_asp
+            asp_w     = ab_asp_window if team == 'AB' else uv_asp_window
+            pvs       = ab_pvs      if team == 'AB' else uv_pvs
+            move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp, nmp_r=nmp_r_val, use_lmr=lmr, lmr_min_depth=lmr_min, lmr_move_index=lmr_idx, use_parallel=parallel, use_asp=asp, asp_window=asp_w, use_pvs=pvs)
             if move is not None:
                 from_pos, to_pos = move
                 result = game.make_move(from_pos, to_pos)
@@ -744,7 +753,7 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
     }
 
 
-def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, ab_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, ab_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, uv_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, uv_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, ab_parallel=False, uv_parallel=False):
+def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, ab_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, ab_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, uv_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, uv_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, ab_parallel=False, uv_parallel=False, ab_asp=True, uv_asp=True, ab_asp_window=ASPIRATION_WINDOW, uv_asp_window=ASPIRATION_WINDOW, ab_pvs=True, uv_pvs=True):
     results = {
         'games': games,
         'ab_wins': 0,
@@ -772,7 +781,7 @@ def simulate_ai_battle(ab_depth=MINIMAX_DEPTH, uv_depth=MINIMAX_DEPTH, games=10,
     total_rounds = 0
 
     for i in range(games):
-        game_result = play_ai_battle_game(ab_depth, uv_depth, rounds=rounds, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp, ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r, first_team=first_team, ab_lmr=ab_lmr, uv_lmr=uv_lmr, ab_lmr_min_depth=ab_lmr_min_depth, ab_lmr_move_index=ab_lmr_move_index, uv_lmr_min_depth=uv_lmr_min_depth, uv_lmr_move_index=uv_lmr_move_index, ab_parallel=ab_parallel, uv_parallel=uv_parallel)
+        game_result = play_ai_battle_game(ab_depth, uv_depth, rounds=rounds, time_limit=time_limit, ab_strategy=ab_strategy, uv_strategy=uv_strategy, ab_nmp=ab_nmp, uv_nmp=uv_nmp, ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r, first_team=first_team, ab_lmr=ab_lmr, uv_lmr=uv_lmr, ab_lmr_min_depth=ab_lmr_min_depth, ab_lmr_move_index=ab_lmr_move_index, uv_lmr_min_depth=uv_lmr_min_depth, uv_lmr_move_index=uv_lmr_move_index, ab_parallel=ab_parallel, uv_parallel=uv_parallel, ab_asp=ab_asp, uv_asp=uv_asp, ab_asp_window=ab_asp_window, uv_asp_window=uv_asp_window, ab_pvs=ab_pvs, uv_pvs=uv_pvs)
         if game_result['winner'] == 'AB':
             results['ab_wins'] += 1
         elif game_result['winner'] == 'UV':
@@ -825,7 +834,8 @@ def _game_worker(args):
     (game_idx, ab_depth, uv_depth, time_limit, ab_strategy, uv_strategy,
      ab_nmp, uv_nmp, ab_nmp_r, uv_nmp_r, first_team,
      ab_lmr, uv_lmr, ab_lmr_min_depth, ab_lmr_move_index,
-     uv_lmr_min_depth, uv_lmr_move_index) = args
+     uv_lmr_min_depth, uv_lmr_move_index,
+     ab_asp, uv_asp, ab_asp_window, uv_asp_window, ab_pvs, uv_pvs) = args
     gr = play_ai_battle_game(
         ab_depth, uv_depth, rounds=20, time_limit=time_limit,
         ab_strategy=ab_strategy, uv_strategy=uv_strategy,
@@ -834,6 +844,8 @@ def _game_worker(args):
         ab_lmr_min_depth=ab_lmr_min_depth, ab_lmr_move_index=ab_lmr_move_index,
         uv_lmr_min_depth=uv_lmr_min_depth, uv_lmr_move_index=uv_lmr_move_index,
         ab_parallel=False, uv_parallel=False,
+        ab_asp=ab_asp, uv_asp=uv_asp, ab_asp_window=ab_asp_window, uv_asp_window=uv_asp_window,
+        ab_pvs=ab_pvs, uv_pvs=uv_pvs,
     )
     return game_idx, gr
 
@@ -946,6 +958,15 @@ def api_ai_battle():
         game_workers = max(1, min(int(data.get('game_workers', 1)), 8))
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error': 'game_workers must be a number.'}), 400
+    ab_asp = bool(data.get('ab_asp', True))
+    uv_asp = bool(data.get('uv_asp', True))
+    ab_pvs = bool(data.get('ab_pvs', True))
+    uv_pvs = bool(data.get('uv_pvs', True))
+    try:
+        ab_asp_window = max(5, min(int(data.get('ab_asp_window', ASPIRATION_WINDOW)), 500))
+        uv_asp_window = max(5, min(int(data.get('uv_asp_window', ASPIRATION_WINDOW)), 500))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error': 'asp_window must be a number.'}), 400
 
     global _battle_stop
     _battle_stop = False
@@ -963,7 +984,8 @@ def api_ai_battle():
                 (i, ab_depth, uv_depth, time_limit, ab_strategy, uv_strategy,
                  ab_nmp, uv_nmp, ab_nmp_r, uv_nmp_r, first_team,
                  ab_lmr, uv_lmr, ab_lmr_min_depth, ab_lmr_move_index,
-                 uv_lmr_min_depth, uv_lmr_move_index)
+                 uv_lmr_min_depth, uv_lmr_move_index,
+                 ab_asp, uv_asp, ab_asp_window, uv_asp_window, ab_pvs, uv_pvs)
                 for i in range(games)
             ]
             completed_count = 0
@@ -1015,6 +1037,8 @@ def api_ai_battle():
                     ab_lmr_min_depth=ab_lmr_min_depth, ab_lmr_move_index=ab_lmr_move_index,
                     uv_lmr_min_depth=uv_lmr_min_depth, uv_lmr_move_index=uv_lmr_move_index,
                     ab_parallel=ab_parallel, uv_parallel=uv_parallel,
+                    ab_asp=ab_asp, uv_asp=uv_asp, ab_asp_window=ab_asp_window, uv_asp_window=uv_asp_window,
+                    ab_pvs=ab_pvs, uv_pvs=uv_pvs,
                 )
                 if gr['winner'] == 'AB':
                     ab_wins += 1
