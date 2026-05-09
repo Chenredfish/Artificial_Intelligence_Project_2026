@@ -72,6 +72,7 @@ MINIMAX_DEPTH = 5
 DEFAULT_NMP_R = 2          # null move reduction factor
 DEFAULT_LMR_MIN_DEPTH = 3  # minimum depth to apply LMR
 DEFAULT_LMR_MOVE_INDEX = 3 # start reducing moves at this index (0-based)
+ASPIRATION_WINDOW = 50     # aspiration window half-width for iterative deepening
 
 # 評估函式：更細緻的 L7 版本，包含棋種價值差異、位置、中心控制、行動力與攻防交換
 EVAL_PIECE_WEIGHTS = {
@@ -463,14 +464,26 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
                 raise SearchTimeout()
             child = board.copy()
             child.apply_move(from_pos, to_pos)
-            # LMR: reduce later quiet (non-capture) moves
-            if (use_lmr and depth >= lmr_min_depth and move_idx >= lmr_move_index
-                    and not is_capture_move(board, (from_pos, to_pos))):
-                value = minimax(child, opponent, max(1, depth - 2), maximizing_team, alpha, beta, **_mm_kwargs)
+            lmr_ok = (use_lmr and depth >= lmr_min_depth and move_idx >= lmr_move_index
+                      and not is_capture_move(board, (from_pos, to_pos)))
+            if move_idx == 0:
+                # First move: full search with current logic (LMR rarely applies at idx 0)
+                if lmr_ok:
+                    value = minimax(child, opponent, max(1, depth - 2), maximizing_team, alpha, beta, **_mm_kwargs)
+                    if value > alpha:
+                        value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
+                else:
+                    value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
+            elif lmr_ok:
+                # PVS + LMR: reduced depth with zero window; re-search only if it improves alpha
+                value = minimax(child, opponent, max(1, depth - 2), maximizing_team, alpha, alpha + 1, **_mm_kwargs)
                 if value > alpha:
                     value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
             else:
-                value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
+                # PVS: full depth with zero window; re-search only if result falls inside the window
+                value = minimax(child, opponent, depth - 1, maximizing_team, alpha, alpha + 1, **_mm_kwargs)
+                if alpha < value < beta:
+                    value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
             if value > best:
                 best = value
                 best_move = (from_pos, to_pos)
@@ -567,14 +580,22 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
     last_completed_moves = [fallback_move]
     transposition_table = {}
     history_heuristic = defaultdict(int)
+    prev_best_value = None  # tracks last completed depth score for aspiration window
 
     for current_depth in range(1, depth + 1):
         if time_limit is not None and time.time() - start_time >= time_limit:
             break
 
+        # Aspiration window: use narrow bounds around previous depth's score
+        if prev_best_value is not None and current_depth > 2:
+            asp_alpha = prev_best_value - ASPIRATION_WINDOW
+            asp_beta  = prev_best_value + ASPIRATION_WINDOW
+        else:
+            asp_alpha, asp_beta = -float('inf'), float('inf')
+
+        ordered_moves = order_moves(board, moves, transposition_table, history_heuristic, team, team)
         best_value = -float('inf')
         current_moves = []
-        ordered_moves = order_moves(board, moves, transposition_table, history_heuristic, team, team)
 
         try:
             for from_pos, to_pos in ordered_moves:
@@ -582,7 +603,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
                     raise SearchTimeout()
                 child = board.copy()
                 child.apply_move(from_pos, to_pos)
-                value = minimax(child, opponent, current_depth - 1, team, -float('inf'), float('inf'), start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
+                value = minimax(child, opponent, current_depth - 1, team, asp_alpha, asp_beta, start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
                 if value > best_value:
                     best_value = value
                     current_moves = [(from_pos, to_pos)]
@@ -591,6 +612,30 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
         except SearchTimeout:
             break
 
+        # Fail-low or fail-high: re-search with full window to get the correct score
+        if asp_alpha != -float('inf') and (best_value <= asp_alpha or best_value >= asp_beta):
+            if time_limit is None or time.time() - start_time < time_limit:
+                retry_value = -float('inf')
+                retry_moves = []
+                try:
+                    for from_pos, to_pos in ordered_moves:
+                        if time_limit is not None and time.time() - start_time >= time_limit:
+                            raise SearchTimeout()
+                        child = board.copy()
+                        child.apply_move(from_pos, to_pos)
+                        value = minimax(child, opponent, current_depth - 1, team, -float('inf'), float('inf'), start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index)
+                        if value > retry_value:
+                            retry_value = value
+                            retry_moves = [(from_pos, to_pos)]
+                        elif value == retry_value:
+                            retry_moves.append((from_pos, to_pos))
+                except SearchTimeout:
+                    pass
+                if retry_moves:
+                    best_value = retry_value
+                    current_moves = retry_moves
+
+        prev_best_value = best_value
         if current_moves:
             last_completed_moves = current_moves
             root_key = (board_key(board), team, team)
