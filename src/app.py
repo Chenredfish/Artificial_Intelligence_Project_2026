@@ -467,20 +467,18 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
             lmr_ok = (use_lmr and depth >= lmr_min_depth and move_idx >= lmr_move_index
                       and not is_capture_move(board, (from_pos, to_pos)))
             if move_idx == 0:
-                # First move: full search with current logic (LMR rarely applies at idx 0)
-                if lmr_ok:
-                    value = minimax(child, opponent, max(1, depth - 2), maximizing_team, alpha, beta, **_mm_kwargs)
-                    if value > alpha:
-                        value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
-                else:
-                    value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
+                # First move: full-depth full-window (LMR never applies at idx 0)
+                value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
             elif lmr_ok:
-                # PVS + LMR: reduced depth with zero window; re-search only if it improves alpha
-                value = minimax(child, opponent, max(1, depth - 2), maximizing_team, alpha, alpha + 1, **_mm_kwargs)
+                # LMR: reduced depth with full window only — no zero-window here to avoid stacking
+                # two reductions (depth cut + window cut) on the same move, which makes the
+                # scout result unreliable and corrupts the re-search decision.
+                value = minimax(child, opponent, max(1, depth - 2), maximizing_team, alpha, beta, **_mm_kwargs)
                 if value > alpha:
                     value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
             else:
-                # PVS: full depth with zero window; re-search only if result falls inside the window
+                # PVS: full depth with zero window — only window is narrowed, depth is not cut,
+                # so the scout is reliable and the re-search condition is trustworthy.
                 value = minimax(child, opponent, depth - 1, maximizing_team, alpha, alpha + 1, **_mm_kwargs)
                 if alpha < value < beta:
                     value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
