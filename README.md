@@ -45,43 +45,72 @@ Then open `http://localhost:5000` in your browser.
 
 ## AI Search Engine
 
-Current search stack (all active by default):
+### Search stack
 
-| Layer | Technique | Effect |
+| Layer | Technique | Effect | Default |
+|---|---|---|---|
+| L4 | Alpha-Beta pruning | ~2× deeper vs plain Minimax | always on |
+| L5 | Iterative Deepening (ID) | Fills full time budget; returns best depth reached so far | always on |
+| L6 | Move ordering | Tries captures and TT-best moves first; maximises cut rate | always on |
+| L6 | Transposition Table (TT) | Caches evaluated positions with EXACT / LOWERBOUND / UPPERBOUND flags | always on |
+| L6 | History Heuristic | Tracks which quiet moves caused beta-cutoffs; improves ordering | always on |
+| L6 | Quiescence Search | Extends search at leaf nodes until no captures remain; avoids horizon effect | always on |
+| L7 | Null Move Pruning (NMP) | Skips own turn at MAX nodes; if opponent still can't beat beta, prune the branch | on, R=2 |
+| L7 | Late Move Reductions (LMR) | Searches quiet late moves at reduced depth first; re-searches only if promising | on, min-d=3, start=3 |
+| L7 | Root Parallelization | Each root move evaluated by a separate worker with its own ID loop and TT | off by default |
+
+**NMP guard:** only applied when own piece count > 2 (prevents Zugzwang misjudgement in endgame).  
+**LMR re-search rule:** if reduced-depth value > alpha, re-search at full depth before updating best.  
+**ID depth cap:** `depth=50` when time limit > 0 (fills budget); `depth=5` when no time limit.  
+**Default time limit:** 60 s (main game and AI Battle).
+
+### Evaluation function
+
+Called at every leaf node. Components (in order of weight):
+
+1. **Material** — weighted piece count: A/U=10, B/V=8, c/d/w/x=4, e/f/y/z=3 *(AI heuristic only; official scoring uses A/B/U/V=3, others=1)*
+2. **Mobility** — number of legal moves available (encourages active pieces)
+3. **Centre control** — bonus for pieces on the four central squares
+4. **Threat penalty** — penalty for own pieces currently under attack
+
+### Benchmark (depth=5, 5 random boards, no time limit)
+
+| Config | Mean time | vs baseline |
 |---|---|---|
-| L4 | Alpha-Beta pruning | ~2× deeper vs plain Minimax |
-| L5 | Iterative Deepening | Fills 60 s budget, returns best depth reached |
-| L6 | Move ordering + Transposition Table | Dramatically improves Alpha-Beta cut rate |
-| L6 | History Heuristic | Improves non-capture move ordering |
-| L6 | Quiescence Search | Avoids horizon effect at leaf nodes |
-| L7 | Null Move Pruning (NMP) | Skips own turn at MAX nodes; prunes large subtrees |
-| L7 | Late Move Reductions (LMR) | Reduces search depth for quiet late moves |
-| L7 | Root Parallelization | Distributes root moves across CPU cores |
+| Baseline (no optimizations) | 12.6 s | — |
+| + merge eval pass + board_key | 11.1 s | −12% |
+| + LMR | 5.0 s | −60% |
+| + Root parallelization | 1.0 s | −92% (12.8×) |
 
-**Benchmark (depth=5, 5 random boards):**
+### AI Battle — batch testing UI
 
-| Config | Mean time |
+Run up to 200 automated games between two AI configurations and stream results in real time.
+
+**Per-team controls:**
+
+| Control | Description |
 |---|---|
-| Baseline (no optimizations) | 12.6 s |
-| + merge eval pass + board_key | 11.1 s |
-| + LMR | 5.0 s |
-| + Root parallelization | 1.0 s |
+| Strategy | Random / Greedy / Minimax |
+| d= | Max search depth (1–50). Ignored when time limit > 0; ID fills the budget automatically. |
+| NMP ✓, R= | Enable Null Move Pruning; R=1 conservative → R=4 aggressive |
+| LMR ✓, min-d=, start= | Enable Late Move Reductions; min-d = minimum depth to apply; start = first move index to reduce (0-based) |
+| 平行 ✓ | Enable move-level root parallelisation for this team |
 
-### AI Battle UI controls
+**Shared controls:**
 
-- Per team: Strategy (Random / Greedy / Minimax), Depth, NMP checkbox + R value, LMR checkbox, 平行 checkbox
-- Shared LMR params: `min-d` (minimum depth to apply, default 3), `start` (move index to begin reducing, default 3)
-- 先手: 隨機 / AB / UV (default: 隨機, eliminates first-mover bias)
-- Game count: 1–200; Time limit: 60 s default
-- Streaming results: each game appends a row in real-time
+| Control | Description |
+|---|---|
+| 先手 | Which team moves first: 隨機 (random) eliminates first-mover bias |
+| 場次 | Number of games (1–200); 30+ recommended for statistical significance |
+| 時限(s) | Per-move think time. 0 = no limit (use with fixed depth) |
+| 多局並行 | Run N games simultaneously (1 = off, 2–8 = on). Disables move-level parallel automatically. |
 
-### Parallel mode notes
+**Parallelism modes (mutually exclusive):**
 
-- **Parallel checkbox** is off by default. Enable to distribute root moves across CPU cores.
-- Each worker process does its own iterative deepening within the same shared time budget.
-- Works with both time-limited mode (60 s) and no-limit mode (depth cap applies).
-- No shared transposition table between workers — slightly weaker than sequential at the same depth ceiling, but covers more root moves simultaneously.
-- Works on Windows (spawn), macOS (spawn, Python 3.8+), and Linux (fork).
+| Mode | When to use |
+|---|---|
+| Move-level parallel (平行 ✓) | Competition candidate; covers more root moves per move decision |
+| Game-level parallel (多局並行 ≥ 2) | Batch testing only; ~2–4× faster; move-level parallel is forced off inside each worker |
 
 ### Benchmark script
 
@@ -89,7 +118,7 @@ Current search stack (all active by default):
 # Sequential (default)
 python benchmark.py sequential
 
-# Parallel
+# Move-level parallel
 python benchmark.py parallel --parallel
 ```
 
