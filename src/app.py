@@ -384,27 +384,40 @@ def quiescence_search(board, team, maximizing_team, alpha, beta, start_time=None
         raise SearchTimeout()
 
     stand_pat = evaluate_board(board, maximizing_team)
-    if stand_pat >= beta:
-        return beta
-    alpha = max(alpha, stand_pat)
-
-    moves = [move for move in board.all_legal_moves(team) if is_capture_move(board, move)]
-    if not moves:
-        return stand_pat
-
-    moves = order_moves(board, moves, None, history_heuristic, team, maximizing_team)
     opponent = 'UV' if team == 'AB' else 'AB'
+    moves = [move for move in board.all_legal_moves(team) if is_capture_move(board, move)]
+    moves = order_moves(board, moves, None, history_heuristic, team, maximizing_team)
 
-    for from_pos, to_pos in moves:
-        if time_limit is not None and start_time is not None and time.time() - start_time >= time_limit:
-            raise SearchTimeout()
-        child = board.copy()
-        child.apply_move(from_pos, to_pos)
-        score = quiescence_search(child, opponent, maximizing_team, alpha, beta, start_time, time_limit, history_heuristic)
-        if score >= beta:
+    if team == maximizing_team:
+        # MAX node: stand-pat raises the floor; capture must beat beta to prune.
+        if stand_pat >= beta:
             return beta
-        alpha = max(alpha, score)
-    return alpha
+        alpha = max(alpha, stand_pat)
+        for from_pos, to_pos in moves:
+            if time_limit is not None and start_time is not None and time.time() - start_time >= time_limit:
+                raise SearchTimeout()
+            child = board.copy()
+            child.apply_move(from_pos, to_pos)
+            score = quiescence_search(child, opponent, maximizing_team, alpha, beta, start_time, time_limit, history_heuristic)
+            if score >= beta:
+                return beta
+            alpha = max(alpha, score)
+        return alpha
+    else:
+        # MIN node: stand-pat lowers the ceiling; opponent's recaptures must beat alpha to prune.
+        if stand_pat <= alpha:
+            return alpha
+        beta = min(beta, stand_pat)
+        for from_pos, to_pos in moves:
+            if time_limit is not None and start_time is not None and time.time() - start_time >= time_limit:
+                raise SearchTimeout()
+            child = board.copy()
+            child.apply_move(from_pos, to_pos)
+            score = quiescence_search(child, opponent, maximizing_team, alpha, beta, start_time, time_limit, history_heuristic)
+            if score <= alpha:
+                return alpha
+            beta = min(beta, score)
+        return beta
 
 
 def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float('inf'), start_time=None, time_limit=None, transposition_table=None, history_heuristic=None, allow_null=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_pvs=True):
