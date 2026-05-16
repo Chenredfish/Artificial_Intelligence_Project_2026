@@ -626,6 +626,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
             asp_beta  = prev_best_value + asp_window
         else:
             asp_alpha, asp_beta = -float('inf'), float('inf')
+        asp_alpha_orig = asp_alpha  # save original lower bound for failure detection
 
         ordered_moves = order_moves(board, moves, transposition_table, history_heuristic, team, team)
         best_value = -float('inf')
@@ -641,16 +642,20 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
                 if value > best_value:
                     best_value = value
                     current_moves = [(from_pos, to_pos)]
+                    asp_alpha = max(asp_alpha, value)  # tighten lower bound so later moves prune faster
                 elif value == best_value:
                     current_moves.append((from_pos, to_pos))
         except SearchTimeout:
             break
 
-        # Fail-low or fail-high: re-search with full window to get the correct score
-        if asp_alpha != -float('inf') and (best_value <= asp_alpha or best_value >= asp_beta):
+        # Fail-low or fail-high: re-search with full window to get the correct score.
+        # depth_reliable tracks whether we have a trustworthy result for this depth.
+        depth_reliable = True
+        if asp_alpha_orig != -float('inf') and (best_value <= asp_alpha_orig or best_value >= asp_beta):
             if time_limit is None or time.time() - start_time < time_limit:
                 retry_value = -float('inf')
                 retry_moves = []
+                retry_timed_out = False
                 try:
                     for from_pos, to_pos in ordered_moves:
                         if time_limit is not None and time.time() - start_time >= time_limit:
@@ -664,13 +669,20 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
                         elif value == retry_value:
                             retry_moves.append((from_pos, to_pos))
                 except SearchTimeout:
-                    pass
-                if retry_moves:
+                    retry_timed_out = True
+                if not retry_timed_out and retry_moves:
                     best_value = retry_value
                     current_moves = retry_moves
+                else:
+                    # Retry incomplete: aspiration results are unreliable.
+                    # Keep last_completed_moves from the previous depth (ID safety guarantee).
+                    depth_reliable = False
+            else:
+                depth_reliable = False  # aspiration failed but no time to retry
 
-        prev_best_value = best_value
-        if current_moves:
+        if depth_reliable:
+            prev_best_value = best_value
+        if depth_reliable and current_moves:
             last_completed_moves = current_moves
             _last_depth_reached = current_depth
             root_key = (board_key(board), team, team)
