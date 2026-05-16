@@ -583,6 +583,7 @@ def _root_move_worker(args):
 
 
 def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False, use_asp=True, asp_window=ASPIRATION_WINDOW, use_pvs=True):
+    global _last_depth_reached
     moves = board.all_legal_moves(team)
     if not moves:
         return None
@@ -594,6 +595,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
 
     # Parallel root search: each worker does iterative deepening with the shared deadline
     if use_parallel and depth > 1:
+        _last_depth_reached = 0  # no unified ID depth in parallel mode
         opponent = 'UV' if team == 'AB' else 'AB'
         board_grid = tuple(tuple(row) for row in board._grid)
         args_list = [
@@ -613,7 +615,6 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
     transposition_table = {}
     history_heuristic = defaultdict(int)
     prev_best_value = None  # tracks last completed depth score for aspiration window
-    global _last_depth_reached
     _last_depth_reached = 0
 
     for current_depth in range(1, depth + 1):
@@ -726,6 +727,7 @@ def choose_move_by_strategy(board, team, strategy, depth=MINIMAX_DEPTH, time_lim
 
 
 def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, ab_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, ab_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, uv_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, uv_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, ab_parallel=False, uv_parallel=False, ab_asp=True, uv_asp=True, ab_asp_window=ASPIRATION_WINDOW, uv_asp_window=ASPIRATION_WINDOW, ab_pvs=True, uv_pvs=True):
+    global _last_depth_reached
     board = Board.random_legal_board()
     game = Game(board=board)
     actual_first = random.choice(['AB', 'UV']) if first_team == 'random' else first_team
@@ -738,6 +740,8 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
     ab_score = 0
     uv_score = 0
     round_number = 1
+    ab_move_log = []
+    uv_move_log = []
 
     for round_number in range(1, rounds + 1):
         any_move = False
@@ -758,17 +762,32 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
             asp       = ab_asp      if team == 'AB' else uv_asp
             asp_w     = ab_asp_window if team == 'AB' else uv_asp_window
             pvs       = ab_pvs      if team == 'AB' else uv_pvs
+            _last_depth_reached = 0
+            t0 = time.time()
             move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp, nmp_r=nmp_r_val, use_lmr=lmr, lmr_min_depth=lmr_min, lmr_move_index=lmr_idx, use_parallel=parallel, use_asp=asp, asp_window=asp_w, use_pvs=pvs)
+            move_time = time.time() - t0
+            depth_reached = _last_depth_reached
+            time_pct = round(min(100.0, move_time / time_limit * 100), 1) if time_limit else None
             if move is not None:
                 from_pos, to_pos = move
                 result = game.make_move(from_pos, to_pos)
                 gain = PIECE_POINTS.get(result['captured'], 0) if result['captured'] else 0
+                move_entry = {
+                    'round': round_number,
+                    'move': result['move'],
+                    'depth': depth_reached,
+                    'time': round(move_time, 3),
+                    'time_pct': time_pct,
+                    'captured': result['captured'],
+                }
                 if team == 'AB':
                     ab_score += gain
                     ab_moves.append(f"R{round_number} AB: {result['move']}")
+                    ab_move_log.append(move_entry)
                 else:
                     uv_score += gain
                     uv_moves.append(f"R{round_number} UV: {result['move']}")
+                    uv_move_log.append(move_entry)
                 any_move = True
         if not any_move:
             break
@@ -780,6 +799,12 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
     else:
         winner = 'draw'
 
+    _ab_d = [e['depth'] for e in ab_move_log if e['depth'] > 0]
+    _uv_d = [e['depth'] for e in uv_move_log if e['depth'] > 0]
+    _ab_t = [e['time'] for e in ab_move_log]
+    _uv_t = [e['time'] for e in uv_move_log]
+    _ab_p = [e['time_pct'] for e in ab_move_log if e['time_pct'] is not None]
+    _uv_p = [e['time_pct'] for e in uv_move_log if e['time_pct'] is not None]
     return {
         'rounds': round_number,
         'winner': winner,
@@ -789,6 +814,18 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
         'uv_moves': uv_moves,
         'state': game.get_state(),
         'first_team': actual_first,
+        'ab_move_log': ab_move_log,
+        'uv_move_log': uv_move_log,
+        'ab_avg_depth': round(sum(_ab_d) / len(_ab_d), 1) if _ab_d else 0,
+        'ab_min_depth': min(_ab_d) if _ab_d else 0,
+        'ab_max_depth': max(_ab_d) if _ab_d else 0,
+        'ab_avg_time': round(sum(_ab_t) / len(_ab_t), 2) if _ab_t else 0.0,
+        'ab_avg_time_pct': round(sum(_ab_p) / len(_ab_p), 1) if _ab_p else None,
+        'uv_avg_depth': round(sum(_uv_d) / len(_uv_d), 1) if _uv_d else 0,
+        'uv_min_depth': min(_uv_d) if _uv_d else 0,
+        'uv_max_depth': max(_uv_d) if _uv_d else 0,
+        'uv_avg_time': round(sum(_uv_t) / len(_uv_t), 2) if _uv_t else 0.0,
+        'uv_avg_time_pct': round(sum(_uv_p) / len(_uv_p), 1) if _uv_p else None,
     }
 
 
@@ -1013,6 +1050,8 @@ def api_ai_battle():
     def generate():
         ab_wins = uv_wins = draws = 0
         ab_total = uv_total = total_rounds = 0
+        ab_depth_sum = uv_depth_sum = 0.0
+        ab_depth_count = uv_depth_count = 0
         game_log = []
         last_gr = None
 
@@ -1045,12 +1084,28 @@ def api_ai_battle():
                     ab_total += gr['ab_score']
                     uv_total += gr['uv_score']
                     total_rounds += gr['rounds']
+                    ab_depth_sum += gr.get('ab_avg_depth', 0)
+                    uv_depth_sum += gr.get('uv_avg_depth', 0)
+                    ab_depth_count += 1
+                    uv_depth_count += 1
                     entry = {
                         'game': completed_count, 'winner': gr['winner'],
                         'ab_score': gr['ab_score'], 'uv_score': gr['uv_score'],
                         'rounds': gr['rounds'], 'first_team': gr['first_team'],
+                        'ab_avg_depth': gr.get('ab_avg_depth', 0),
+                        'uv_avg_depth': gr.get('uv_avg_depth', 0),
+                        'ab_min_depth': gr.get('ab_min_depth', 0),
+                        'ab_max_depth': gr.get('ab_max_depth', 0),
+                        'uv_min_depth': gr.get('uv_min_depth', 0),
+                        'uv_max_depth': gr.get('uv_max_depth', 0),
+                        'ab_avg_time': gr.get('ab_avg_time', 0.0),
+                        'uv_avg_time': gr.get('uv_avg_time', 0.0),
+                        'ab_avg_time_pct': gr.get('ab_avg_time_pct'),
+                        'uv_avg_time_pct': gr.get('uv_avg_time_pct'),
+                        'ab_move_log': gr.get('ab_move_log', []),
+                        'uv_move_log': gr.get('uv_move_log', []),
                     }
-                    game_log.append(entry)
+                    game_log.append({k: v for k, v in entry.items() if k not in ('ab_move_log', 'uv_move_log')})
                     last_gr = gr
                     yield json.dumps({
                         'type': 'progress',
@@ -1088,12 +1143,28 @@ def api_ai_battle():
                 ab_total += gr['ab_score']
                 uv_total += gr['uv_score']
                 total_rounds += gr['rounds']
+                ab_depth_sum += gr.get('ab_avg_depth', 0)
+                uv_depth_sum += gr.get('uv_avg_depth', 0)
+                ab_depth_count += 1
+                uv_depth_count += 1
                 entry = {
                     'game': i + 1, 'winner': gr['winner'],
                     'ab_score': gr['ab_score'], 'uv_score': gr['uv_score'],
                     'rounds': gr['rounds'], 'first_team': gr['first_team'],
+                    'ab_avg_depth': gr.get('ab_avg_depth', 0),
+                    'uv_avg_depth': gr.get('uv_avg_depth', 0),
+                    'ab_min_depth': gr.get('ab_min_depth', 0),
+                    'ab_max_depth': gr.get('ab_max_depth', 0),
+                    'uv_min_depth': gr.get('uv_min_depth', 0),
+                    'uv_max_depth': gr.get('uv_max_depth', 0),
+                    'ab_avg_time': gr.get('ab_avg_time', 0.0),
+                    'uv_avg_time': gr.get('uv_avg_time', 0.0),
+                    'ab_avg_time_pct': gr.get('ab_avg_time_pct'),
+                    'uv_avg_time_pct': gr.get('uv_avg_time_pct'),
+                    'ab_move_log': gr.get('ab_move_log', []),
+                    'uv_move_log': gr.get('uv_move_log', []),
                 }
-                game_log.append(entry)
+                game_log.append({k: v for k, v in entry.items() if k not in ('ab_move_log', 'uv_move_log')})
                 last_gr = gr
                 yield json.dumps({
                     'type': 'progress',
@@ -1126,6 +1197,8 @@ def api_ai_battle():
             'game_workers': game_workers,
             'first_team': first_team,
             'game_log': game_log,
+            'avg_ab_depth': round(ab_depth_sum / ab_depth_count, 1) if ab_depth_count > 0 else 0,
+            'avg_uv_depth': round(uv_depth_sum / uv_depth_count, 1) if uv_depth_count > 0 else 0,
         }
         if last_gr:
             summary.update({

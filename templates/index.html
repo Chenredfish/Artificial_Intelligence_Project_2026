@@ -253,6 +253,27 @@
     .battle-table tr.ab-win td:nth-child(2) { color:#89b4fa; font-weight:bold; }
     .battle-table tr.uv-win td:nth-child(2) { color:#f38ba8; font-weight:bold; }
     .battle-table tr.draw-row td:nth-child(2) { color:#f9e2af; }
+
+    /* ── Detail modal ───────────────────────────── */
+    .detail-btn { font-size:10px; padding:1px 5px; background:#313244; color:#a6e3a1; border:1px solid #45475a; border-radius:3px; cursor:pointer; }
+    .detail-btn:hover { background:#45475a; }
+    #detail-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:1000; align-items:center; justify-content:center; }
+    #detail-modal.open { display:flex; }
+    #detail-modal-content { background:#1e1e2e; border:1px solid #585b70; border-radius:8px; padding:16px; max-width:94vw; max-height:90vh; overflow-y:auto; width:820px; }
+    #detail-modal-content h3 { font-size:13px; margin-bottom:10px; color:#cdd6f4; }
+    .detail-close { float:right; background:none; border:none; color:#f38ba8; cursor:pointer; font-size:18px; line-height:1; }
+    .detail-panels { display:flex; gap:14px; }
+    .detail-panel { flex:1; min-width:0; }
+    .detail-panel h4 { font-size:12px; margin-bottom:6px; }
+    .detail-stat-row { font-size:11px; color:#a6adc8; margin-bottom:3px; }
+    .detail-table { width:100%; border-collapse:collapse; font-size:10px; margin-top:8px; }
+    .detail-table th, .detail-table td { padding:2px 4px; border:1px solid #45475a; text-align:center; }
+    .detail-table th { background:#181825; color:#6c7086; }
+    .detail-table tr.time-pressure td { background:rgba(243,139,168,.15); }
+    .depth-hist { margin-top:8px; }
+    .depth-hist-title { font-size:10px; color:#6c7086; margin-bottom:3px; }
+    .depth-bar-row { display:flex; align-items:center; gap:5px; font-size:10px; margin-bottom:2px; }
+    .depth-bar { height:9px; background:#89b4fa; border-radius:2px; min-width:2px; }
   </style>
 </head>
 <body>
@@ -381,7 +402,7 @@
       <div style="max-height:160px; overflow-y:auto; margin-top:4px;">
         <table class="battle-table">
           <thead>
-            <tr><th>#</th><th>先</th><th>勝者</th><th>AB</th><th>UV</th><th>回合</th></tr>
+            <tr><th>#</th><th>先</th><th>勝者</th><th>AB</th><th>UV</th><th>回合</th><th>AB層</th><th>UV層</th><th></th></tr>
           </thead>
           <tbody id="battle-game-tbody"></tbody>
         </table>
@@ -837,6 +858,7 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   }, 1000);
 
   // 先顯示空表格，讓 row 可以即時 append
+  gameDetailStore = [];
   const tbody = document.getElementById('battle-game-tbody');
   tbody.innerHTML = '';
   document.getElementById('battle-summary').style.display = 'block';
@@ -878,11 +900,17 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
         const msg = JSON.parse(line);
         if (msg.type === 'progress') {
           doneGames = msg.game;
+          const idx = gameDetailStore.length;
+          gameDetailStore.push(msg);
           const tr = document.createElement('tr');
           tr.className = msg.winner === 'AB' ? 'ab-win' : msg.winner === 'UV' ? 'uv-win' : 'draw-row';
+          const abD = msg.ab_avg_depth != null ? msg.ab_avg_depth : '—';
+          const uvD = msg.uv_avg_depth != null ? msg.uv_avg_depth : '—';
           tr.innerHTML = `<td>${msg.game}</td><td>${msg.first_team||'?'}</td>` +
             `<td>${msg.winner === 'draw' ? '平' : msg.winner}</td>` +
-            `<td>${msg.ab_score}</td><td>${msg.uv_score}</td><td>${msg.rounds}</td>`;
+            `<td>${msg.ab_score}</td><td>${msg.uv_score}</td><td>${msg.rounds}</td>` +
+            `<td>${abD}</td><td>${uvD}</td>` +
+            `<td><button class="detail-btn" onclick="showGameDetail(${idx})">詳</button></td>`;
           tbody.appendChild(tr);
           tbody.parentElement.scrollTop = tbody.parentElement.scrollHeight;
         } else if (msg.type === 'done') {
@@ -928,7 +956,8 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
     `勝率：<span class="team-ab">AB ${data.ab_win_rate}%</span> ` +
     `/ <span class="team-uv">UV ${data.uv_win_rate}%</span> / 平 ${data.draw_rate}%<br>` +
     `平均得分：<span class="team-ab">AB ${data.avg_ab_score}</span> / <span class="team-uv">UV ${data.avg_uv_score}</span><br>` +
-    `平均回合：${data.avg_rounds}`;
+    `平均回合：${data.avg_rounds}<br>` +
+    `平均層數：<span class="team-ab">AB ${data.avg_ab_depth ?? '—'}</span> / <span class="team-uv">UV ${data.avg_uv_depth ?? '—'}</span>`;
 
   document.getElementById('battle-ab-path').textContent = (data.ab_moves || []).join('\n');
   document.getElementById('battle-uv-path').textContent = (data.uv_moves || []).join('\n');
@@ -1034,6 +1063,89 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
   renderBoard();
   updatePanel();
 })();
+</script>
+
+<!-- ── Detail modal ─────────────────────────────────────── -->
+<div id="detail-modal">
+  <div id="detail-modal-content">
+    <button class="detail-close" onclick="closeDetailModal()">✕</button>
+    <h3 id="detail-modal-title">第 ? 局 詳細探索資訊</h3>
+    <div class="detail-panels">
+      <div class="detail-panel" id="detail-panel-ab"></div>
+      <div class="detail-panel" id="detail-panel-uv"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Game detail store ────────────────────────────────────
+let gameDetailStore = [];
+
+function showGameDetail(idx) {
+  const msg = gameDetailStore[idx];
+  if (!msg) return;
+  document.getElementById('detail-modal-title').textContent = `第 ${msg.game} 局 詳細探索資訊`;
+  fillDetailPanel('AB', msg.ab_move_log || [], msg.ab_avg_depth, msg.ab_min_depth,
+    msg.ab_max_depth, msg.ab_avg_time, msg.ab_avg_time_pct);
+  fillDetailPanel('UV', msg.uv_move_log || [], msg.uv_avg_depth, msg.uv_min_depth,
+    msg.uv_max_depth, msg.uv_avg_time, msg.uv_avg_time_pct);
+  document.getElementById('detail-modal').classList.add('open');
+}
+
+function fillDetailPanel(team, moveLog, avgDepth, minDepth, maxDepth, avgTime, avgTimePct) {
+  const el = document.getElementById(`detail-panel-${team.toLowerCase()}`);
+  const teamCls = team === 'AB' ? 'team-ab' : 'team-uv';
+  const timePctStr = avgTimePct != null ? `${avgTimePct}%` : '—';
+
+  let html = `<h4><span class="${teamCls}">${team}</span></h4>`;
+  html += `<div class="detail-stat-row">平均層數 <strong>${avgDepth ?? '—'}</strong>　` +
+    `最小 ${minDepth ?? '—'}　最大 ${maxDepth ?? '—'}</div>`;
+  html += `<div class="detail-stat-row">平均耗時 <strong>${avgTime ?? '—'}s</strong>　` +
+    `平均時限% ${timePctStr}</div>`;
+
+  // Depth histogram
+  const depthCounts = {};
+  for (const e of moveLog) {
+    if (e.depth > 0) depthCounts[e.depth] = (depthCounts[e.depth] || 0) + 1;
+  }
+  const dKeys = Object.keys(depthCounts).map(Number).sort((a, b) => a - b);
+  if (dKeys.length > 0) {
+    const maxCount = Math.max(...Object.values(depthCounts));
+    html += `<div class="depth-hist"><div class="depth-hist-title">層數分布</div>`;
+    for (const d of dKeys) {
+      const cnt = depthCounts[d];
+      const w = Math.max(2, Math.round((cnt / maxCount) * 100));
+      html += `<div class="depth-bar-row">` +
+        `<span style="width:20px;text-align:right">${d}</span>` +
+        `<div class="depth-bar" style="width:${w}px"></div>` +
+        `<span>${cnt}次</span></div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Per-move table
+  html += `<table class="detail-table"><thead>` +
+    `<tr><th>回合</th><th>棋步</th><th>層</th><th>耗時</th><th>時%</th><th>吃</th></tr>` +
+    `</thead><tbody>`;
+  for (const e of moveLog) {
+    const tp = e.time_pct != null ? e.time_pct : '—';
+    const tpSuffix = e.time_pct != null ? '%' : '';
+    const pressure = e.time_pct != null && e.time_pct > 85 ? ' class="time-pressure"' : '';
+    html += `<tr${pressure}><td>${e.round}</td><td>${e.move}</td>` +
+      `<td>${e.depth || '—'}</td><td>${e.time}s</td>` +
+      `<td>${tp}${tpSuffix}</td><td>${e.captured || '—'}</td></tr>`;
+  }
+  html += `</tbody></table>`;
+  el.innerHTML = html;
+}
+
+function closeDetailModal() {
+  document.getElementById('detail-modal').classList.remove('open');
+}
+
+document.getElementById('detail-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('detail-modal')) closeDetailModal();
+});
 </script>
 </body>
 </html>
