@@ -512,19 +512,33 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
     else:
         best = float('inf')
         best_move = None
-        for from_pos, to_pos in moves:
+        for move_idx, (from_pos, to_pos) in enumerate(moves):
             if time_limit is not None and start_time is not None and time.time() - start_time >= time_limit:
                 raise SearchTimeout()
             child = board.copy()
             child.apply_move(from_pos, to_pos)
-            value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
+            lmr_ok = (use_lmr and depth >= lmr_min_depth and move_idx >= lmr_move_index
+                      and not is_capture_move(board, (from_pos, to_pos)))
+            if move_idx == 0:
+                value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
+            elif lmr_ok:
+                # LMR at MIN node: reduced depth probe; re-search at full depth if still promising for MIN.
+                value = minimax(child, opponent, max(1, depth - 2), maximizing_team, alpha, beta, **_mm_kwargs)
+                if value < beta:
+                    value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
+            else:
+                if use_pvs:
+                    # PVS at MIN: zero window just below beta.
+                    value = minimax(child, opponent, depth - 1, maximizing_team, beta - 1, beta, **_mm_kwargs)
+                    if alpha < value < beta:
+                        value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
+                else:
+                    value = minimax(child, opponent, depth - 1, maximizing_team, alpha, beta, **_mm_kwargs)
             if value < best:
                 best = value
                 best_move = (from_pos, to_pos)
             beta = min(beta, best)
             if beta <= alpha:
-                if history_heuristic is not None and best_move is not None:
-                    history_heuristic[best_move] += depth * depth
                 break
 
     if transposition_table is not None:
