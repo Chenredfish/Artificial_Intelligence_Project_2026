@@ -185,25 +185,22 @@ def game_phase(board):
     return max(0.0, min(1.0, total_pieces / 24.0))
 
 
-def moves_and_attacks(board, team):
-    """Single pass: returns (total, captures, non_captures, attack_map, piece_move_counts) for team."""
-    moves = board.all_legal_moves(team)
-    capture_count = 0
-    non_capture_count = 0
+def board_analysis(board, team):
+    """Single pass over team pieces: returns all data previously split across
+    moves_and_attacks() and influence_map(), reducing per-leaf work from 4
+    traversals to 2 (one per team).
+
+    Returns: (total_moves, captures, non_captures, attacks, piece_move_counts, influence)
+      attacks   — squares the team can legally move to (empty + enemy)
+      influence — all squares the team can "see" up to and including first blocker
+    """
+    moves_total = 0
+    captures = 0
+    non_captures = 0
     attacks = defaultdict(int)
     piece_move_counts = defaultdict(int)
-    for src, dest in moves:
-        piece_move_counts[src] += 1
-        attacks[dest] += 1
-        if board.get(dest[0], dest[1]) is not None:
-            capture_count += 1
-        else:
-            non_capture_count += 1
-    return len(moves), capture_count, non_capture_count, attacks, piece_move_counts
+    influence = defaultdict(int)
 
-
-def influence_map(board, team):
-    counts = defaultdict(int)
     for r, c, piece in board.pieces(team):
         directions, max_steps = _PIECE_RULES[piece]
         for dr, dc in directions:
@@ -211,10 +208,23 @@ def influence_map(board, team):
                 nr, nc = r + dr * step, c + dc * step
                 if not (0 <= nr < 8 and 0 <= nc < 8):
                     break
-                counts[(nr, nc)] += 1
-                if board.get(nr, nc) is not None:
+                target = board.get(nr, nc)
+                influence[(nr, nc)] += 1          # count regardless (influence_map logic)
+                if target is None:
+                    attacks[(nr, nc)] += 1
+                    piece_move_counts[(r, c)] += 1
+                    moves_total += 1
+                    non_captures += 1
+                elif get_team(target) != team:
+                    attacks[(nr, nc)] += 1
+                    piece_move_counts[(r, c)] += 1
+                    moves_total += 1
+                    captures += 1
                     break
-    return counts
+                else:
+                    break                         # own piece blocks; influence already counted
+
+    return moves_total, captures, non_captures, attacks, piece_move_counts, influence
 
 
 def static_exchange_score(board, maximizing_team, own_attacks, opp_attacks, own_move_counts, opp_move_counts):
@@ -320,10 +330,8 @@ def evaluate_board(board, maximizing_team):
     opponent = 'UV' if maximizing_team == 'AB' else 'AB'
     phase = game_phase(board)
 
-    own_moves, own_captures, own_non_capture, own_attacks, own_move_counts = moves_and_attacks(board, maximizing_team)
-    opp_moves, opp_captures, opp_non_capture, opp_attacks, opp_move_counts = moves_and_attacks(board, opponent)
-    own_influence = influence_map(board, maximizing_team)
-    opp_influence = influence_map(board, opponent)
+    own_moves, own_captures, own_non_capture, own_attacks, own_move_counts, own_influence = board_analysis(board, maximizing_team)
+    opp_moves, opp_captures, opp_non_capture, opp_attacks, opp_move_counts, opp_influence = board_analysis(board, opponent)
 
     for r in range(8):
         for c in range(8):
