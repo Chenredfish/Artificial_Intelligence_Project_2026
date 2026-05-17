@@ -1,6 +1,7 @@
 import os
 import random
 import time
+import numpy as np
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -175,7 +176,7 @@ def piece_square_value(piece, row, col):
 
 
 def game_phase(board):
-    total_pieces = sum(1 for r in range(8) for c in range(8) if board.get(r, c) is not None)
+    total_pieces = int(np.count_nonzero(board._grid))
     return max(0.0, min(1.0, total_pieces / 24.0))
 
 
@@ -206,7 +207,7 @@ def influence_map(board, team):
                 if not (0 <= nr < 8 and 0 <= nc < 8):
                     break
                 counts[(nr, nc)] += 1
-                if board.get(nr, nc) is not None:
+                if board._grid[nr, nc] != 0:
                     break
     return counts
 
@@ -349,7 +350,7 @@ def evaluate_board(board, maximizing_team):
 
 
 def board_key(board):
-    return tuple(tuple(row) for row in board._grid)
+    return board._grid.tobytes()
 
 
 def is_capture_move(board, move):
@@ -571,7 +572,7 @@ def _root_move_worker(args):
     """Top-level worker for ProcessPoolExecutor — evaluates one root move with iterative deepening."""
     board_grid, from_pos, to_pos, max_depth, team, opponent, use_nmp, nmp_r, use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit, use_pvs, use_mvv_lva = args
     child = Board()
-    child._grid = [list(row) for row in board_grid]
+    child._grid = board_grid.copy()
     child.apply_move(from_pos, to_pos)
     tt = {}
     hh = defaultdict(int)
@@ -607,7 +608,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
     # Parallel root search: each worker does iterative deepening with the shared deadline
     if use_parallel and depth > 1:
         opponent = 'UV' if team == 'AB' else 'AB'
-        board_grid = tuple(tuple(row) for row in board._grid)
+        board_grid = board._grid.copy()
         args_list = [
             (board_grid, fp, tp, depth, team, opponent, use_nmp, nmp_r,
              use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit, use_pvs, use_mvv_lva)

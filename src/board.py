@@ -1,5 +1,6 @@
 import re
 import random
+import numpy as np
 
 AB_PIECES = frozenset('ABcdef')
 UV_PIECES = frozenset('UVwxyz')
@@ -18,6 +19,13 @@ _PIECE_RULES = {
     'y': (_DIAGONAL,   1), 'z': (_DIAGONAL,   1),
 }
 
+PIECE_TO_INT = {
+    'A': 1,  'B': 2,  'c': 3,  'd': 4,  'e': 5,  'f': 6,
+    'U': 7,  'V': 8,  'w': 9,  'x': 10, 'y': 11, 'z': 12,
+}
+INT_TO_PIECE = {v: k for k, v in PIECE_TO_INT.items()}
+# INT_TO_PIECE[0] is not defined; 0 means empty
+
 
 def get_team(piece):
     if piece in AB_PIECES:
@@ -29,7 +37,7 @@ def get_team(piece):
 
 class Board:
     def __init__(self):
-        self._grid = [[None] * 8 for _ in range(8)]
+        self._grid = np.zeros((8, 8), dtype=np.int8)
 
     # ── construction ───────────────────────────────────────────────────────
 
@@ -48,9 +56,9 @@ class Board:
         for r, row in enumerate(grid):
             for c, cell in enumerate(row):
                 if cell in (None, '.', '+'):
-                    board._grid[r][c] = None
-                elif cell in PIECE_POINTS:
-                    board._grid[r][c] = cell
+                    board._grid[r, c] = 0
+                elif cell in PIECE_TO_INT:
+                    board._grid[r, c] = PIECE_TO_INT[cell]
                 else:
                     raise ValueError(f"Invalid piece at ({r},{c}): {cell}")
 
@@ -74,48 +82,49 @@ class Board:
 
     def copy(self):
         new = Board()
-        new._grid = [row[:] for row in self._grid]
+        new._grid = self._grid.copy()   # np.copy — faster than list deepcopy
         return new
 
     # ── accessors ──────────────────────────────────────────────────────────
 
     def get(self, row, col):
-        return self._grid[row][col]
+        v = int(self._grid[row, col])
+        return INT_TO_PIECE[v] if v != 0 else None
 
     def set(self, row, col, piece):
-        self._grid[row][col] = piece
+        self._grid[row, col] = PIECE_TO_INT[piece] if piece is not None else 0
 
     def pieces(self, team):
         """Yield (row, col, piece) for every piece belonging to team."""
-        for r in range(8):
-            for c in range(8):
-                p = self._grid[r][c]
-                if p and get_team(p) == team:
-                    yield r, c, p
+        lo, hi = (1, 6) if team == 'AB' else (7, 12)
+        rs, cs = np.where((self._grid >= lo) & (self._grid <= hi))
+        for r, c in zip(rs.tolist(), cs.tolist()):
+            yield r, c, INT_TO_PIECE[int(self._grid[r, c])]
 
     # ── move generation ────────────────────────────────────────────────────
 
     def legal_moves(self, row, col):
         """Return list of (row, col) destinations for the piece at (row, col)."""
-        piece = self._grid[row][col]
-        if piece is None:
+        piece_int = int(self._grid[row, col])
+        if piece_int == 0:
             return []
+        piece = INT_TO_PIECE[piece_int]
+        team_lo, team_hi = (1, 6) if piece_int <= 6 else (7, 12)
         directions, max_steps = _PIECE_RULES[piece]
-        team = get_team(piece)
         moves = []
         for dr, dc in directions:
             for step in range(1, max_steps + 1):
                 r, c = row + dr * step, col + dc * step
                 if not (0 <= r < 8 and 0 <= c < 8):
                     break
-                target = self._grid[r][c]
-                if target is None:
+                target = int(self._grid[r, c])
+                if target == 0:
                     moves.append((r, c))
-                elif get_team(target) != team:
-                    moves.append((r, c))  # capture — stop after
+                elif not (team_lo <= target <= team_hi):
+                    moves.append((r, c))   # capture — stop after
                     break
                 else:
-                    break                 # blocked by own piece
+                    break                  # blocked by own piece
         return moves
 
     def all_legal_moves(self, team):
@@ -132,17 +141,20 @@ class Board:
         """Execute move; return captured piece or None."""
         r1, c1 = from_pos
         r2, c2 = to_pos
-        piece    = self._grid[r1][c1]
-        captured = self._grid[r2][c2]
-        self._grid[r2][c2] = piece
-        self._grid[r1][c1] = None
-        return captured
+        piece_int    = int(self._grid[r1, c1])
+        captured_int = int(self._grid[r2, c2])
+        self._grid[r2, c2] = piece_int
+        self._grid[r1, c1] = 0
+        return INT_TO_PIECE[captured_int] if captured_int != 0 else None
 
     def is_legal_move(self, from_pos, to_pos, team):
         """Return True if from_pos belongs to team and to_pos is a legal destination."""
         r1, c1 = from_pos
-        piece = self._grid[r1][c1]
-        if piece is None or get_team(piece) != team:
+        piece_int = int(self._grid[r1, c1])
+        if piece_int == 0:
+            return False
+        piece = INT_TO_PIECE[piece_int]
+        if get_team(piece) != team:
             return False
         return to_pos in self.legal_moves(r1, c1)
 
@@ -171,13 +183,17 @@ class Board:
         """Return ASCII board string matching the PDF layout ('+' for empty)."""
         lines = ["   " + " ".join(str(c) for c in range(8))]
         for r in range(8):
-            cells = " ".join(self._grid[r][c] or "+" for c in range(8))
+            cells = " ".join(
+                INT_TO_PIECE[int(self._grid[r, c])] if self._grid[r, c] != 0 else "+"
+                for c in range(8)
+            )
             lines.append(f"{r}  {cells}")
         return "\n".join(lines)
 
     def to_dict(self):
         """JSON-serialisable 8×8 list; empty squares → '.'."""
         return [
-            [self._grid[r][c] or "." for c in range(8)]
+            [INT_TO_PIECE[int(self._grid[r, c])] if self._grid[r, c] != 0 else "."
+             for c in range(8)]
             for r in range(8)
         ]
