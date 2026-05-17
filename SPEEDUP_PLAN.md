@@ -10,7 +10,7 @@
 | **Piece List Cache** | **Board._ab_pieces/_uv_pieces — pieces() O(64)→O(6)** | ✅ main | `4d6a927` |
 | B1 | Board._grid → numpy int8 | ❌ 放棄 | `perf/numpy-board` |
 | C | Numba JIT | ❌ 放棄 | `perf/numpy-board` |
-| **B3** | **Futility Pruning + Delta Pruning** | 🔲 下一步 | — |
+| **B3** | **Futility Pruning + Delta Pruning** | ❌ 放棄 | `perf/b3-pruning` |
 
 ---
 
@@ -52,7 +52,31 @@
 
 ---
 
-## Stage B3：Futility Pruning + Delta Pruning
+## Stage B3：Futility Pruning + Delta Pruning（❌ 實驗失敗，已放棄）
+
+### 實驗結論（perf/b3-pruning，2026-05-17）
+
+**參數掃描結果（fixed depth=5, sequential）：**
+
+| 設定 | Mean time | vs main | 正確性 |
+|------|-----------|---------|--------|
+| no-B3 | 0.378s | +2% | ✅ |
+| F150/300 D200（lazy） | 0.380s | +3% | ✅ |
+| F50/80 D30 | 0.384s | +4% | ✅ |
+| F30/50 D20 | 0.381s | +3% | ✅ |
+| F20/35 D15 | 0.701s | **+89%** | ❌ 1 move 錯誤 |
+| F10/20 D10 | 0.569s | **+54%** | ❌ 1 move 錯誤 |
+| F5/10 D5 | 0.477s | **+29%** | ❌ 2 moves 錯誤 |
+
+**根本原因：** 本遊戲的 eval 函式（influence map + PST）一步 quiet move 可改變 20–50 分，
+不滿足 Futility Pruning 的「quiet move 最多漲 N 分」前提。
+margin 大 → 從不觸發（只有開銷）；margin 小 → 錯誤剪枝破壞 alpha-beta 效率。
+
+**結論：** 不適用，`perf/b3-pruning` 存檔不合入。
+
+---
+
+## Stage B3：Futility Pruning + Delta Pruning（原始規格，保留參考）
 
 ### B3a：Futility Pruning（在 minimax 的移動迴圈頂部）
 
