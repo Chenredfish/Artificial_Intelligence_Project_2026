@@ -494,15 +494,16 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
     if team == maximizing_team:
         best = -float('inf')
         best_move = None
-        _futility_static = evaluate_board(board, maximizing_team) if depth in FUTILITY_MARGIN else None
+        _futility_static = None  # lazy: computed at most once per node, only on first quiet move
         for move_idx, (from_pos, to_pos) in enumerate(moves):
             if time_limit is not None and start_time is not None and time.time() - start_time >= time_limit:
                 raise SearchTimeout()
             # Futility pruning: quiet moves near leaves that can't raise alpha even optimistically
-            if (_futility_static is not None
-                    and board.get(to_pos[0], to_pos[1]) is None
-                    and _futility_static + FUTILITY_MARGIN[depth] <= alpha):
-                continue
+            if depth in FUTILITY_MARGIN and board.get(to_pos[0], to_pos[1]) is None:
+                if _futility_static is None:
+                    _futility_static = evaluate_board(board, maximizing_team)
+                if _futility_static + FUTILITY_MARGIN[depth] <= alpha:
+                    continue
             child = board.copy()
             child.apply_move(from_pos, to_pos)
             lmr_ok = (use_lmr and depth >= lmr_min_depth and move_idx >= lmr_move_index
