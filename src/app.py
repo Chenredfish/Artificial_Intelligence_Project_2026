@@ -946,11 +946,19 @@ def api_ask_ai():
     data = request.get_json() or {}
     auto_apply = data.get('auto_apply', True)
     time_limit = data.get('time_limit')
+    use_nmp     = bool(data.get('use_nmp', True))
+    use_lmr     = bool(data.get('use_lmr', True))
+    use_pvs     = bool(data.get('use_pvs', True))
+    use_mvv_lva = bool(data.get('use_mvv_lva', True))
+    use_parallel = bool(data.get('use_parallel', False))
 
     try:
-        time_limit = None if time_limit is None else float(time_limit)
+        time_limit     = None if time_limit is None else float(time_limit)
+        nmp_r          = max(1, min(int(data.get('nmp_r',          DEFAULT_NMP_R)),          4))
+        lmr_min_depth  = max(2, min(int(data.get('lmr_min_depth',  DEFAULT_LMR_MIN_DEPTH)),  10))
+        lmr_move_index = max(1, min(int(data.get('lmr_move_index', DEFAULT_LMR_MOVE_INDEX)), 10))
     except (TypeError, ValueError):
-        return jsonify({'ok': False, 'error': 'Time limit must be a number.'}), 400
+        return jsonify({'ok': False, 'error': 'Invalid parameter value.'}), 400
 
     _game.start_turn_timer()
 
@@ -959,7 +967,13 @@ def api_ask_ai():
         return jsonify({'ok': False, 'error': 'No legal moves available'}), 400
 
     depth = 50 if (time_limit and time_limit > 0) else MINIMAX_DEPTH
-    move = choose_minimax_move(_game.board, _game.current_team, depth=depth, time_limit=time_limit)
+    move = choose_minimax_move(
+        _game.board, _game.current_team,
+        depth=depth, time_limit=time_limit,
+        use_nmp=use_nmp, nmp_r=nmp_r,
+        use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index,
+        use_pvs=use_pvs, use_mvv_lva=use_mvv_lva, use_parallel=use_parallel,
+    )
     if move is None:
         return jsonify({'ok': False, 'error': 'No valid AI move found.'}), 400
     from_pos, to_pos = move
