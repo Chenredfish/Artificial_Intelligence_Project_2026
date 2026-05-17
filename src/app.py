@@ -85,6 +85,12 @@ EVAL_PIECE_WEIGHTS = {
     'f': 3,  'z': 3,
 }
 
+# B3a: Futility Pruning — MAX node, depth 1/2, non-capture quiet moves
+FUTILITY_MARGIN = {1: 150, 2: 300}
+
+# B3b: Delta Pruning — quiescence MAX node, skip captures that can't improve alpha
+DELTA_MARGIN = 200
+
 PIECE_PST_TYPE = {
     'A': 'A', 'U': 'A',
     'B': 'B', 'V': 'B',
@@ -405,6 +411,10 @@ def quiescence_search(board, team, maximizing_team, alpha, beta, start_time=None
         for from_pos, to_pos in moves:
             if time_limit is not None and start_time is not None and time.time() - start_time >= time_limit:
                 raise SearchTimeout()
+            # Delta pruning: skip captures whose best-case gain still can't beat alpha
+            _cap = board.get(to_pos[0], to_pos[1])
+            if _cap is not None and stand_pat + EVAL_PIECE_WEIGHTS.get(_cap, 0) + DELTA_MARGIN <= alpha:
+                continue
             child = board.copy()
             child.apply_move(from_pos, to_pos)
             score = quiescence_search(child, opponent, maximizing_team, alpha, beta, start_time, time_limit, history_heuristic, use_mvv_lva=use_mvv_lva)
@@ -484,9 +494,15 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
     if team == maximizing_team:
         best = -float('inf')
         best_move = None
+        _futility_static = evaluate_board(board, maximizing_team) if depth in FUTILITY_MARGIN else None
         for move_idx, (from_pos, to_pos) in enumerate(moves):
             if time_limit is not None and start_time is not None and time.time() - start_time >= time_limit:
                 raise SearchTimeout()
+            # Futility pruning: quiet moves near leaves that can't raise alpha even optimistically
+            if (_futility_static is not None
+                    and board.get(to_pos[0], to_pos[1]) is None
+                    and _futility_static + FUTILITY_MARGIN[depth] <= alpha):
+                continue
             child = board.copy()
             child.apply_move(from_pos, to_pos)
             lmr_ok = (use_lmr and depth >= lmr_min_depth and move_idx >= lmr_move_index
