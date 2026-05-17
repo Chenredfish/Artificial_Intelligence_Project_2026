@@ -180,18 +180,20 @@ def game_phase(board):
 
 
 def moves_and_attacks(board, team):
-    """Single pass: returns (total, captures, non_captures, attack_map) for team."""
+    """Single pass: returns (total, captures, non_captures, attack_map, piece_move_counts) for team."""
     moves = board.all_legal_moves(team)
     capture_count = 0
     non_capture_count = 0
     attacks = defaultdict(int)
-    for _, dest in moves:
+    piece_move_counts = defaultdict(int)
+    for src, dest in moves:
+        piece_move_counts[src] += 1
         attacks[dest] += 1
         if board.get(dest[0], dest[1]) is not None:
             capture_count += 1
         else:
             non_capture_count += 1
-    return len(moves), capture_count, non_capture_count, attacks
+    return len(moves), capture_count, non_capture_count, attacks, piece_move_counts
 
 
 def influence_map(board, team):
@@ -209,7 +211,7 @@ def influence_map(board, team):
     return counts
 
 
-def static_exchange_score(board, maximizing_team, own_attacks, opp_attacks):
+def static_exchange_score(board, maximizing_team, own_attacks, opp_attacks, own_move_counts, opp_move_counts):
     opponent = 'UV' if maximizing_team == 'AB' else 'AB'
     own_support = own_attacks
     opp_support = opp_attacks
@@ -222,7 +224,7 @@ def static_exchange_score(board, maximizing_team, own_attacks, opp_attacks):
             penalty = EVAL_PIECE_WEIGHTS[piece] * (0.26 * min(attack_count, 3) - 0.12 * min(defense, 3))
             if (r, c) in CENTER_SQUARES:
                 penalty *= 1.12
-            if len(board.legal_moves(r, c)) == 0:
+            if own_move_counts.get((r, c), 0) == 0:
                 penalty *= 1.2
             score -= max(0, penalty)
 
@@ -233,14 +235,14 @@ def static_exchange_score(board, maximizing_team, own_attacks, opp_attacks):
             bonus = EVAL_PIECE_WEIGHTS[piece] * (0.22 * min(attack_count, 3) - 0.14 * min(defense, 3))
             if (r, c) in CENTER_SQUARES:
                 bonus *= 1.1
-            if len(board.legal_moves(r, c)) == 0:
+            if opp_move_counts.get((r, c), 0) == 0:
                 bonus *= 1.15
             score += max(0, bonus)
 
     return score
 
 
-def mobility_score(board, maximizing_team, own_captures, own_non_capture, opp_captures, opp_non_capture):
+def mobility_score(board, maximizing_team, own_captures, own_non_capture, opp_captures, opp_non_capture, own_move_counts, opp_move_counts):
     opponent = 'UV' if maximizing_team == 'AB' else 'AB'
     piece_weights = {
         'A': 1.0, 'U': 1.0,
@@ -252,10 +254,10 @@ def mobility_score(board, maximizing_team, own_captures, own_non_capture, opp_ca
     }
     mobility_value = 0
     for r, c, piece in board.pieces(maximizing_team):
-        mobility_value += len(board.legal_moves(r, c)) * piece_weights[piece]
+        mobility_value += own_move_counts.get((r, c), 0) * piece_weights[piece]
     opp_value = 0
     for r, c, piece in board.pieces(opponent):
-        opp_value += len(board.legal_moves(r, c)) * piece_weights[piece]
+        opp_value += opp_move_counts.get((r, c), 0) * piece_weights[piece]
     score = 0.09 * (mobility_value - opp_value)
     score += 0.24 * (own_captures - opp_captures)
     score += 0.08 * (own_non_capture - opp_non_capture)
@@ -312,8 +314,8 @@ def evaluate_board(board, maximizing_team):
     opponent = 'UV' if maximizing_team == 'AB' else 'AB'
     phase = game_phase(board)
 
-    own_moves, own_captures, own_non_capture, own_attacks = moves_and_attacks(board, maximizing_team)
-    opp_moves, opp_captures, opp_non_capture, opp_attacks = moves_and_attacks(board, opponent)
+    own_moves, own_captures, own_non_capture, own_attacks, own_move_counts = moves_and_attacks(board, maximizing_team)
+    opp_moves, opp_captures, opp_non_capture, opp_attacks, opp_move_counts = moves_and_attacks(board, opponent)
     own_influence = influence_map(board, maximizing_team)
     opp_influence = influence_map(board, opponent)
 
@@ -338,11 +340,11 @@ def evaluate_board(board, maximizing_team):
                 elif (r, c) in NEAR_CENTER_SQUARES:
                     score -= 0.09
 
-    score += mobility_score(board, maximizing_team, own_captures, own_non_capture, opp_captures, opp_non_capture) * (0.40 + 0.50 * phase)
+    score += mobility_score(board, maximizing_team, own_captures, own_non_capture, opp_captures, opp_non_capture, own_move_counts, opp_move_counts) * (0.40 + 0.50 * phase)
     score += activity_score(own_moves, own_captures, own_non_capture, opp_moves, opp_captures, opp_non_capture) * (0.20 + 0.20 * phase)
     score += control_score(board, maximizing_team, own_influence, opp_influence)
     score += threatened_score(board, maximizing_team, own_influence, opp_influence)
-    score += static_exchange_score(board, maximizing_team, own_attacks, opp_attacks)
+    score += static_exchange_score(board, maximizing_team, own_attacks, opp_attacks, own_move_counts, opp_move_counts)
     return score
 
 
