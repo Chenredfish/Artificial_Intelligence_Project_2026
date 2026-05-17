@@ -48,13 +48,13 @@ class Game:
         if self.is_game_over():
             raise ValueError("Game is already over")
 
+        if not self.board.is_legal_move(from_pos, to_pos, self.current_team):
+            raise ValueError("Illegal move")
+
         # A new round begins when AB is about to move (except the very first move).
         # This keeps round_counter == X for the entire Xth AB+UV pair.
         if self.current_team == "AB" and len(self.move_history) > 0:
             self.round_counter += 1
-
-        if not self.board.is_legal_move(from_pos, to_pos, self.current_team):
-            raise ValueError("Illegal move")
 
         r1, c1 = from_pos
         piece = self.board.get(r1, c1)
