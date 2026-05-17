@@ -270,6 +270,7 @@
     .detail-table th, .detail-table td { padding:2px 4px; border:1px solid #45475a; text-align:center; }
     .detail-table th { background:#181825; color:#6c7086; }
     .detail-table tr.time-pressure td { background:rgba(243,139,168,.15); }
+    .detail-table tr.parallel-overhead td { background:rgba(249,226,175,.1); }
     .depth-hist { margin-top:8px; }
     .depth-hist-title { font-size:10px; color:#6c7086; margin-bottom:3px; }
     .depth-bar-row { display:flex; align-items:center; gap:5px; font-size:10px; margin-bottom:2px; }
@@ -1130,8 +1131,10 @@ function fillDetailPanel(team, moveLog, avgDepth, minDepth, maxDepth, avgTime, a
   for (const e of moveLog) {
     const tp = e.time_pct != null ? e.time_pct : '—';
     const tpSuffix = e.time_pct != null ? '%' : '';
-    const pressure = e.time_pct != null && e.time_pct > 85 ? ' class="time-pressure"' : '';
-    html += `<tr${pressure}><td>${e.round}</td><td>${e.move}</td>` +
+    const rowCls = e.time_pct == null ? '' :
+      e.time_pct > 100 ? ' class="parallel-overhead"' :
+      e.time_pct > 95  ? ' class="time-pressure"' : '';
+    html += `<tr${rowCls}><td>${e.round}</td><td>${e.move}</td>` +
       `<td>${e.depth || '—'}</td><td>${e.time}s</td>` +
       `<td>${tp}${tpSuffix}</td><td>${e.captured || '—'}</td></tr>`;
   }

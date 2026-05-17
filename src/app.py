@@ -567,6 +567,7 @@ def _root_move_worker(args):
     tt = {}
     hh = defaultdict(int)
     best_value = -float('inf')
+    last_depth = 0
     for d in range(1, max_depth + 1):
         if time_limit is not None and start_time is not None and time.time() - start_time >= time_limit:
             break
@@ -577,9 +578,10 @@ def _root_move_worker(args):
                           use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index,
                           use_pvs=use_pvs)
             best_value = val
+            last_depth = d
         except SearchTimeout:
             break
-    return (best_value, from_pos, to_pos)
+    return (best_value, from_pos, to_pos, last_depth)
 
 
 def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False, use_asp=True, asp_window=ASPIRATION_WINDOW, use_pvs=True):
@@ -595,7 +597,6 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
 
     # Parallel root search: each worker does iterative deepening with the shared deadline
     if use_parallel and depth > 1:
-        _last_depth_reached = 0  # no unified ID depth in parallel mode
         opponent = 'UV' if team == 'AB' else 'AB'
         board_grid = tuple(tuple(row) for row in board._grid)
         args_list = [
@@ -605,8 +606,10 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
         ]
         with ProcessPoolExecutor() as executor:
             results = list(executor.map(_root_move_worker, args_list))
-        best_value = max(v for v, _, _ in results)
-        best_moves = [(fp, tp) for v, fp, tp in results if v == best_value]
+        worker_depths = [d for _, _, _, d in results]
+        _last_depth_reached = round(sum(worker_depths) / len(worker_depths)) if worker_depths else 0
+        best_value = max(v for v, _, _, _ in results)
+        best_moves = [(fp, tp) for v, fp, tp, _ in results if v == best_value]
         return random.choice(best_moves)
     opponent = 'UV' if team == 'AB' else 'AB'
 
@@ -767,7 +770,7 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
             move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp, nmp_r=nmp_r_val, use_lmr=lmr, lmr_min_depth=lmr_min, lmr_move_index=lmr_idx, use_parallel=parallel, use_asp=asp, asp_window=asp_w, use_pvs=pvs)
             move_time = time.time() - t0
             depth_reached = _last_depth_reached
-            time_pct = round(min(100.0, move_time / time_limit * 100), 1) if time_limit else None
+            time_pct = round(move_time / time_limit * 100, 1) if time_limit else None
             if move is not None:
                 from_pos, to_pos = move
                 result = game.make_move(from_pos, to_pos)
