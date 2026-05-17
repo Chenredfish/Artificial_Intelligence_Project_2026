@@ -181,7 +181,7 @@ def piece_square_value(piece, row, col):
 
 
 def game_phase(board):
-    total_pieces = sum(1 for r in range(8) for c in range(8) if board.get(r, c) is not None)
+    total_pieces = len(board._ab_pieces) + len(board._uv_pieces)
     return max(0.0, min(1.0, total_pieces / 24.0))
 
 
@@ -466,8 +466,7 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
 
     # Null Move Pruning — MAX nodes only, depth≥3, Zugzwang guard (own pieces > 2)
     if allow_null and depth >= nmp_r + 1 and team == maximizing_team:
-        own_count = sum(1 for r in range(8) for c in range(8)
-                        if board.get(r, c) is not None and get_team(board.get(r, c)) == team)
+        own_count = sum(1 for _ in board.pieces(team))
         if own_count > 2:
             try:
                 null_val = minimax(board, opponent, depth - 1 - nmp_r, maximizing_team,
