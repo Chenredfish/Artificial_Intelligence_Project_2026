@@ -48,6 +48,12 @@ def api_legal_moves():
     return jsonify({'moves': moves})
 
 
+@app.route('/api/random_board')
+def api_random_board():
+    board = Board.random_legal_board()
+    return jsonify({'grid': board.to_dict()})
+
+
 # ── action API ──────────────────────────────────────────────────────────
 
 @app.route('/api/move', methods=['POST'])

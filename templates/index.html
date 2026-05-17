@@ -1040,8 +1040,10 @@ document.getElementById('btn-new').addEventListener('click', () => {
   document.getElementById('modal-overlay').classList.add('open');
 });
 document.getElementById('btn-cancel').addEventListener('click', closeModal);
-document.getElementById('btn-random').addEventListener('click', () => {
-  document.getElementById('board-input').value = generateRandomBoard();
+document.getElementById('btn-random').addEventListener('click', async () => {
+  const data = await apiFetch('/api/random_board');
+  document.getElementById('board-input').value =
+    data.grid.map(row => row.join('')).join('\n');
   document.getElementById('modal-error').textContent = '';
 });
 document.getElementById('btn-sample').addEventListener('click', () => {
