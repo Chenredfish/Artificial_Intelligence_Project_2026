@@ -360,14 +360,18 @@ def is_capture_move(board, move):
 def move_score(board, move, best_move=None, history_heuristic=None):
     from_pos, to_pos = move
     captured = board.get(to_pos[0], to_pos[1])
-    capture_value = PIECE_POINTS.get(captured, 0) if captured is not None else 0
+    # MVV-LVA: prefer high-value victim, break ties by low-value attacker
+    if captured is not None:
+        mvv_lva = EVAL_PIECE_WEIGHTS[captured] * 100 - EVAL_PIECE_WEIGHTS[board.get(from_pos[0], from_pos[1])]
+    else:
+        mvv_lva = 0
     row, col = to_pos
     center_distance = abs(row - 3.5) + abs(col - 3.5)
     history_bonus = 0
     if history_heuristic is not None:
         history_bonus = history_heuristic.get(move, 0)
     best_bonus = 10000 if move == best_move else 0
-    return (best_bonus, capture_value * 100, history_bonus, -center_distance)
+    return (best_bonus, mvv_lva, history_bonus, -center_distance)
 
 
 def order_moves(board, moves, transposition_table, history_heuristic, team, maximizing_team):
