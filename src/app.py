@@ -357,38 +357,45 @@ def is_capture_move(board, move):
     return board.get(to_pos[0], to_pos[1]) is not None
 
 
-def move_score(board, move, best_move=None, history_heuristic=None):
+def move_score(board, move, best_move=None, history_heuristic=None, use_mvv_lva=True):
     from_pos, to_pos = move
     captured = board.get(to_pos[0], to_pos[1])
-    capture_value = PIECE_POINTS.get(captured, 0) if captured is not None else 0
+    if captured is not None:
+        if use_mvv_lva:
+            # MVV-LVA: prefer high-value victim, break ties by low-value attacker
+            mvv_lva = EVAL_PIECE_WEIGHTS[captured] * 100 - EVAL_PIECE_WEIGHTS[board.get(from_pos[0], from_pos[1])]
+        else:
+            mvv_lva = PIECE_POINTS.get(captured, 0) * 100
+    else:
+        mvv_lva = 0
     row, col = to_pos
     center_distance = abs(row - 3.5) + abs(col - 3.5)
     history_bonus = 0
     if history_heuristic is not None:
         history_bonus = history_heuristic.get(move, 0)
     best_bonus = 10000 if move == best_move else 0
-    return (best_bonus, capture_value * 100, history_bonus, -center_distance)
+    return (best_bonus, mvv_lva, history_bonus, -center_distance)
 
 
-def order_moves(board, moves, transposition_table, history_heuristic, team, maximizing_team):
+def order_moves(board, moves, transposition_table, history_heuristic, team, maximizing_team, use_mvv_lva=True):
     tt_entry = transposition_table.get((board_key(board), team, maximizing_team)) if transposition_table is not None else None
     best_move = tt_entry.get('best_move') if tt_entry else None
     scored_moves = []
     for move in moves:
-        score = move_score(board, move, best_move=best_move, history_heuristic=history_heuristic)
+        score = move_score(board, move, best_move=best_move, history_heuristic=history_heuristic, use_mvv_lva=use_mvv_lva)
         scored_moves.append((score, move))
     scored_moves.sort(reverse=True)
     return [move for _, move in scored_moves]
 
 
-def quiescence_search(board, team, maximizing_team, alpha, beta, start_time=None, time_limit=None, history_heuristic=None):
+def quiescence_search(board, team, maximizing_team, alpha, beta, start_time=None, time_limit=None, history_heuristic=None, use_mvv_lva=True):
     if time_limit is not None and start_time is not None and time.time() - start_time >= time_limit:
         raise SearchTimeout()
 
     stand_pat = evaluate_board(board, maximizing_team)
     opponent = 'UV' if team == 'AB' else 'AB'
     moves = [move for move in board.all_legal_moves(team) if is_capture_move(board, move)]
-    moves = order_moves(board, moves, None, history_heuristic, team, maximizing_team)
+    moves = order_moves(board, moves, None, history_heuristic, team, maximizing_team, use_mvv_lva=use_mvv_lva)
 
     if team == maximizing_team:
         # MAX node: stand-pat raises the floor; capture must beat beta to prune.
@@ -400,7 +407,7 @@ def quiescence_search(board, team, maximizing_team, alpha, beta, start_time=None
                 raise SearchTimeout()
             child = board.copy()
             child.apply_move(from_pos, to_pos)
-            score = quiescence_search(child, opponent, maximizing_team, alpha, beta, start_time, time_limit, history_heuristic)
+            score = quiescence_search(child, opponent, maximizing_team, alpha, beta, start_time, time_limit, history_heuristic, use_mvv_lva=use_mvv_lva)
             if score >= beta:
                 return beta
             alpha = max(alpha, score)
@@ -415,20 +422,20 @@ def quiescence_search(board, team, maximizing_team, alpha, beta, start_time=None
                 raise SearchTimeout()
             child = board.copy()
             child.apply_move(from_pos, to_pos)
-            score = quiescence_search(child, opponent, maximizing_team, alpha, beta, start_time, time_limit, history_heuristic)
+            score = quiescence_search(child, opponent, maximizing_team, alpha, beta, start_time, time_limit, history_heuristic, use_mvv_lva=use_mvv_lva)
             if score <= alpha:
                 return alpha
             beta = min(beta, score)
         return beta
 
 
-def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float('inf'), start_time=None, time_limit=None, transposition_table=None, history_heuristic=None, allow_null=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_pvs=True):
+def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float('inf'), start_time=None, time_limit=None, transposition_table=None, history_heuristic=None, allow_null=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_pvs=True, use_mvv_lva=True):
     if time_limit is not None and start_time is not None:
         if time.time() - start_time >= time_limit:
             raise SearchTimeout()
 
     if depth == 0:
-        return quiescence_search(board, team, maximizing_team, alpha, beta, start_time, time_limit, history_heuristic)
+        return quiescence_search(board, team, maximizing_team, alpha, beta, start_time, time_limit, history_heuristic, use_mvv_lva=use_mvv_lva)
 
     tt_key = (board_key(board), team, maximizing_team)
     if transposition_table is not None:
@@ -447,7 +454,7 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
     if not moves:
         return evaluate_board(board, maximizing_team)
 
-    moves = order_moves(board, moves, transposition_table, history_heuristic, team, maximizing_team)
+    moves = order_moves(board, moves, transposition_table, history_heuristic, team, maximizing_team, use_mvv_lva=use_mvv_lva)
     opponent = 'UV' if team == 'AB' else 'AB'
     alpha_orig, beta_orig = alpha, beta
 
@@ -462,7 +469,7 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
                                    transposition_table, history_heuristic,
                                    allow_null=False, nmp_r=nmp_r,
                                    use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index,
-                                   use_pvs=use_pvs)
+                                   use_pvs=use_pvs, use_mvv_lva=use_mvv_lva)
                 if null_val >= beta:
                     return beta
             except SearchTimeout:
@@ -472,7 +479,7 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
                       transposition_table=transposition_table, history_heuristic=history_heuristic,
                       allow_null=allow_null, nmp_r=nmp_r,
                       use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index,
-                      use_pvs=use_pvs)
+                      use_pvs=use_pvs, use_mvv_lva=use_mvv_lva)
 
     if team == maximizing_team:
         best = -float('inf')
@@ -562,7 +569,7 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
 
 def _root_move_worker(args):
     """Top-level worker for ProcessPoolExecutor — evaluates one root move with iterative deepening."""
-    board_grid, from_pos, to_pos, max_depth, team, opponent, use_nmp, nmp_r, use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit, use_pvs = args
+    board_grid, from_pos, to_pos, max_depth, team, opponent, use_nmp, nmp_r, use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit, use_pvs, use_mvv_lva = args
     child = Board()
     child._grid = [list(row) for row in board_grid]
     child.apply_move(from_pos, to_pos)
@@ -578,7 +585,7 @@ def _root_move_worker(args):
                           start_time, time_limit, tt, hh,
                           allow_null=use_nmp, nmp_r=nmp_r,
                           use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index,
-                          use_pvs=use_pvs)
+                          use_pvs=use_pvs, use_mvv_lva=use_mvv_lva)
             best_value = val
             last_depth = d
         except SearchTimeout:
@@ -586,7 +593,7 @@ def _root_move_worker(args):
     return (best_value, from_pos, to_pos, last_depth)
 
 
-def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False, use_asp=True, asp_window=ASPIRATION_WINDOW, use_pvs=True):
+def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False, use_asp=True, asp_window=ASPIRATION_WINDOW, use_pvs=True, use_mvv_lva=True):
     global _last_depth_reached
     moves = board.all_legal_moves(team)
     if not moves:
@@ -603,7 +610,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
         board_grid = tuple(tuple(row) for row in board._grid)
         args_list = [
             (board_grid, fp, tp, depth, team, opponent, use_nmp, nmp_r,
-             use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit, use_pvs)
+             use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit, use_pvs, use_mvv_lva)
             for fp, tp in moves
         ]
         with ProcessPoolExecutor() as executor:
@@ -634,7 +641,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
             asp_alpha, asp_beta = -float('inf'), float('inf')
         asp_alpha_orig = asp_alpha  # save original lower bound for failure detection
 
-        ordered_moves = order_moves(board, moves, transposition_table, history_heuristic, team, team)
+        ordered_moves = order_moves(board, moves, transposition_table, history_heuristic, team, team, use_mvv_lva=use_mvv_lva)
         best_value = -float('inf')
         current_moves = []
 
@@ -644,7 +651,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
                     raise SearchTimeout()
                 child = board.copy()
                 child.apply_move(from_pos, to_pos)
-                value = minimax(child, opponent, current_depth - 1, team, asp_alpha, asp_beta, start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, use_pvs=use_pvs)
+                value = minimax(child, opponent, current_depth - 1, team, asp_alpha, asp_beta, start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, use_pvs=use_pvs, use_mvv_lva=use_mvv_lva)
                 if value > best_value:
                     best_value = value
                     current_moves = [(from_pos, to_pos)]
@@ -668,7 +675,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
                             raise SearchTimeout()
                         child = board.copy()
                         child.apply_move(from_pos, to_pos)
-                        value = minimax(child, opponent, current_depth - 1, team, -float('inf'), float('inf'), start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, use_pvs=use_pvs)
+                        value = minimax(child, opponent, current_depth - 1, team, -float('inf'), float('inf'), start_time, time_limit, transposition_table, history_heuristic, allow_null=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, use_pvs=use_pvs, use_mvv_lva=use_mvv_lva)
                         if value > retry_value:
                             retry_value = value
                             retry_moves = [(from_pos, to_pos)]
@@ -722,16 +729,16 @@ def choose_greedy_move(board, team):
     return random.choice(moves)
 
 
-def choose_move_by_strategy(board, team, strategy, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False, use_asp=True, asp_window=ASPIRATION_WINDOW, use_pvs=True):
+def choose_move_by_strategy(board, team, strategy, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False, use_asp=True, asp_window=ASPIRATION_WINDOW, use_pvs=True, use_mvv_lva=True):
     if strategy == 'random':
         moves = board.all_legal_moves(team)
         return random.choice(moves) if moves else None
     if strategy == 'greedy':
         return choose_greedy_move(board, team)
-    return choose_minimax_move(board, team, depth=depth, time_limit=time_limit, use_nmp=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, use_parallel=use_parallel, use_asp=use_asp, asp_window=asp_window, use_pvs=use_pvs)
+    return choose_minimax_move(board, team, depth=depth, time_limit=time_limit, use_nmp=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, use_parallel=use_parallel, use_asp=use_asp, asp_window=asp_window, use_pvs=use_pvs, use_mvv_lva=use_mvv_lva)
 
 
-def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, ab_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, ab_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, uv_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, uv_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, ab_parallel=False, uv_parallel=False, ab_asp=True, uv_asp=True, ab_asp_window=ASPIRATION_WINDOW, uv_asp_window=ASPIRATION_WINDOW, ab_pvs=True, uv_pvs=True):
+def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, ab_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, ab_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, uv_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, uv_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, ab_parallel=False, uv_parallel=False, ab_asp=True, uv_asp=True, ab_asp_window=ASPIRATION_WINDOW, uv_asp_window=ASPIRATION_WINDOW, ab_pvs=True, uv_pvs=True, ab_mvv_lva=True, uv_mvv_lva=True):
     global _last_depth_reached
     board = Board.random_legal_board()
     game = Game(board=board)
@@ -767,9 +774,10 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
             asp       = ab_asp      if team == 'AB' else uv_asp
             asp_w     = ab_asp_window if team == 'AB' else uv_asp_window
             pvs       = ab_pvs      if team == 'AB' else uv_pvs
+            mvv_lva   = ab_mvv_lva  if team == 'AB' else uv_mvv_lva
             _last_depth_reached = 0
             t0 = time.time()
-            move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp, nmp_r=nmp_r_val, use_lmr=lmr, lmr_min_depth=lmr_min, lmr_move_index=lmr_idx, use_parallel=parallel, use_asp=asp, asp_window=asp_w, use_pvs=pvs)
+            move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp, nmp_r=nmp_r_val, use_lmr=lmr, lmr_min_depth=lmr_min, lmr_move_index=lmr_idx, use_parallel=parallel, use_asp=asp, asp_window=asp_w, use_pvs=pvs, use_mvv_lva=mvv_lva)
             move_time = time.time() - t0
             depth_reached = _last_depth_reached
             time_pct = round(move_time / time_limit * 100, 1) if time_limit else None
@@ -916,7 +924,8 @@ def _game_worker(args):
      ab_nmp, uv_nmp, ab_nmp_r, uv_nmp_r, first_team,
      ab_lmr, uv_lmr, ab_lmr_min_depth, ab_lmr_move_index,
      uv_lmr_min_depth, uv_lmr_move_index,
-     ab_asp, uv_asp, ab_asp_window, uv_asp_window, ab_pvs, uv_pvs) = args
+     ab_asp, uv_asp, ab_asp_window, uv_asp_window, ab_pvs, uv_pvs,
+     ab_mvv_lva, uv_mvv_lva) = args
     gr = play_ai_battle_game(
         ab_depth, uv_depth, rounds=20, time_limit=time_limit,
         ab_strategy=ab_strategy, uv_strategy=uv_strategy,
@@ -927,6 +936,7 @@ def _game_worker(args):
         ab_parallel=False, uv_parallel=False,
         ab_asp=ab_asp, uv_asp=uv_asp, ab_asp_window=ab_asp_window, uv_asp_window=uv_asp_window,
         ab_pvs=ab_pvs, uv_pvs=uv_pvs,
+        ab_mvv_lva=ab_mvv_lva, uv_mvv_lva=uv_mvv_lva,
     )
     return game_idx, gr
 
@@ -1043,6 +1053,8 @@ def api_ai_battle():
     uv_asp = bool(data.get('uv_asp', True))
     ab_pvs = bool(data.get('ab_pvs', True))
     uv_pvs = bool(data.get('uv_pvs', True))
+    ab_mvv_lva = bool(data.get('ab_mvv_lva', True))
+    uv_mvv_lva = bool(data.get('uv_mvv_lva', True))
     try:
         ab_asp_window = max(5, min(int(data.get('ab_asp_window', ASPIRATION_WINDOW)), 500))
         uv_asp_window = max(5, min(int(data.get('uv_asp_window', ASPIRATION_WINDOW)), 500))
@@ -1068,7 +1080,8 @@ def api_ai_battle():
                  ab_nmp, uv_nmp, ab_nmp_r, uv_nmp_r, first_team,
                  ab_lmr, uv_lmr, ab_lmr_min_depth, ab_lmr_move_index,
                  uv_lmr_min_depth, uv_lmr_move_index,
-                 ab_asp, uv_asp, ab_asp_window, uv_asp_window, ab_pvs, uv_pvs)
+                 ab_asp, uv_asp, ab_asp_window, uv_asp_window, ab_pvs, uv_pvs,
+                 ab_mvv_lva, uv_mvv_lva)
                 for i in range(games)
             ]
             completed_count = 0
@@ -1138,6 +1151,7 @@ def api_ai_battle():
                     ab_parallel=ab_parallel, uv_parallel=uv_parallel,
                     ab_asp=ab_asp, uv_asp=uv_asp, ab_asp_window=ab_asp_window, uv_asp_window=uv_asp_window,
                     ab_pvs=ab_pvs, uv_pvs=uv_pvs,
+                    ab_mvv_lva=ab_mvv_lva, uv_mvv_lva=uv_mvv_lva,
                 )
                 if gr['winner'] == 'AB':
                     ab_wins += 1
