@@ -362,6 +362,7 @@
       <label id="battle-ab-lmr-wrap"><input type="checkbox" id="battle-ab-lmr" checked> LMR</label>
       <span id="battle-ab-lmr-params-wrap" style="font-size:12px;"> min-d=<input id="battle-ab-lmr-min-depth" type="number" min="2" max="10" value="3" style="width:36px;"> start=<input id="battle-ab-lmr-move-index" type="number" min="1" max="10" value="3" style="width:36px;"></span>
       <label id="battle-ab-pvs-wrap"><input type="checkbox" id="battle-ab-pvs" checked> PVS</label>
+      <label id="battle-ab-mvv-lva-wrap"><input type="checkbox" id="battle-ab-mvv-lva" checked> MVV-LVA</label>
       <label id="battle-ab-asp-wrap"><input type="checkbox" id="battle-ab-asp" checked> ASP W=<input id="battle-ab-asp-w" type="number" min="5" max="500" value="50" style="width:44px;"></label>
       <label id="battle-ab-parallel-wrap"><input type="checkbox" id="battle-ab-parallel"> 平行</label>
     </div>
@@ -378,6 +379,7 @@
       <label id="battle-uv-lmr-wrap"><input type="checkbox" id="battle-uv-lmr" checked> LMR</label>
       <span id="battle-uv-lmr-params-wrap" style="font-size:12px;"> min-d=<input id="battle-uv-lmr-min-depth" type="number" min="2" max="10" value="3" style="width:36px;"> start=<input id="battle-uv-lmr-move-index" type="number" min="1" max="10" value="3" style="width:36px;"></span>
       <label id="battle-uv-pvs-wrap"><input type="checkbox" id="battle-uv-pvs" checked> PVS</label>
+      <label id="battle-uv-mvv-lva-wrap"><input type="checkbox" id="battle-uv-mvv-lva" checked> MVV-LVA</label>
       <label id="battle-uv-asp-wrap"><input type="checkbox" id="battle-uv-asp" checked> ASP W=<input id="battle-uv-asp-w" type="number" min="5" max="500" value="50" style="width:44px;"></label>
       <label id="battle-uv-parallel-wrap"><input type="checkbox" id="battle-uv-parallel"> 平行</label>
     </div>
@@ -751,6 +753,7 @@ document.getElementById('battle-ab-strategy').addEventListener('change', functio
   document.getElementById('battle-ab-lmr-wrap').style.display = show;
   document.getElementById('battle-ab-lmr-params-wrap').style.display = show;
   document.getElementById('battle-ab-pvs-wrap').style.display = show;
+  document.getElementById('battle-ab-mvv-lva-wrap').style.display = show;
   document.getElementById('battle-ab-asp-wrap').style.display = show;
   document.getElementById('battle-ab-parallel-wrap').style.display = show;
 });
@@ -761,6 +764,7 @@ document.getElementById('battle-uv-strategy').addEventListener('change', functio
   document.getElementById('battle-uv-lmr-wrap').style.display = show;
   document.getElementById('battle-uv-lmr-params-wrap').style.display = show;
   document.getElementById('battle-uv-pvs-wrap').style.display = show;
+  document.getElementById('battle-uv-mvv-lva-wrap').style.display = show;
   document.getElementById('battle-uv-asp-wrap').style.display = show;
   document.getElementById('battle-uv-parallel-wrap').style.display = show;
 });
@@ -837,6 +841,8 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
   const uvParallel = document.getElementById('battle-uv-parallel').checked;
   const abPvs      = document.getElementById('battle-ab-pvs').checked;
   const uvPvs      = document.getElementById('battle-uv-pvs').checked;
+  const abMvvLva   = document.getElementById('battle-ab-mvv-lva').checked;
+  const uvMvvLva   = document.getElementById('battle-uv-mvv-lva').checked;
   const abAsp      = document.getElementById('battle-ab-asp').checked;
   const uvAsp      = document.getElementById('battle-uv-asp').checked;
   const abAspW     = parseInt(document.getElementById('battle-ab-asp-w').value, 10) || 50;
@@ -874,6 +880,7 @@ document.getElementById('btn-ai-battle').addEventListener('click', async () => {
     uv_lmr_min_depth: uvLmrMinDepth, uv_lmr_move_index: uvLmrMoveIndex,
     ab_parallel: abParallel, uv_parallel: uvParallel,
     ab_pvs: abPvs, uv_pvs: uvPvs,
+    ab_mvv_lva: abMvvLva, uv_mvv_lva: uvMvvLva,
     ab_asp: abAsp, uv_asp: uvAsp, ab_asp_window: abAspW, uv_asp_window: uvAspW,
     game_workers: gameWorkers,
     first_team: firstTeam, games,
