@@ -38,6 +38,8 @@ def get_team(piece):
 class Board:
     def __init__(self):
         self._grid = np.zeros((8, 8), dtype=np.int8)
+        self._ab_pieces = []   # [(r, c, piece_str), ...]  — O(1) pieces() lookup
+        self._uv_pieces = []
 
     # ── construction ───────────────────────────────────────────────────────
 
@@ -58,7 +60,12 @@ class Board:
                 if cell in (None, '.', '+'):
                     board._grid[r, c] = 0
                 elif cell in PIECE_TO_INT:
-                    board._grid[r, c] = PIECE_TO_INT[cell]
+                    v = PIECE_TO_INT[cell]
+                    board._grid[r, c] = v
+                    if v <= 6:
+                        board._ab_pieces.append((r, c, cell))
+                    else:
+                        board._uv_pieces.append((r, c, cell))
                 else:
                     raise ValueError(f"Invalid piece at ({r},{c}): {cell}")
 
@@ -80,9 +87,27 @@ class Board:
 
         raise RuntimeError('Unable to generate a legal random board after many attempts')
 
+    @classmethod
+    def from_grid_array(cls, grid):
+        """Reconstruct from a numpy grid array, rebuilding piece lists (used by parallel workers)."""
+        board = cls()
+        board._grid = grid.copy()
+        for r in range(8):
+            for c in range(8):
+                v = int(grid[r, c])
+                if v != 0:
+                    p = INT_TO_PIECE[v]
+                    if v <= 6:
+                        board._ab_pieces.append((r, c, p))
+                    else:
+                        board._uv_pieces.append((r, c, p))
+        return board
+
     def copy(self):
         new = Board()
-        new._grid = self._grid.copy()   # np.copy — faster than list deepcopy
+        new._grid = self._grid.copy()
+        new._ab_pieces = self._ab_pieces.copy()
+        new._uv_pieces = self._uv_pieces.copy()
         return new
 
     # ── accessors ──────────────────────────────────────────────────────────
@@ -92,23 +117,31 @@ class Board:
         return INT_TO_PIECE[v] if v != 0 else None
 
     def set(self, row, col, piece):
-        self._grid[row, col] = PIECE_TO_INT[piece] if piece is not None else 0
+        old_int = int(self._grid[row, col])
+        if old_int != 0:
+            old_str = INT_TO_PIECE[old_int]
+            lst = self._ab_pieces if old_int <= 6 else self._uv_pieces
+            lst.remove((row, col, old_str))
+        if piece is not None:
+            new_int = PIECE_TO_INT[piece]
+            self._grid[row, col] = new_int
+            lst = self._ab_pieces if new_int <= 6 else self._uv_pieces
+            lst.append((row, col, piece))
+        else:
+            self._grid[row, col] = 0
 
     def pieces(self, team):
-        """Yield (row, col, piece) for every piece belonging to team."""
-        lo, hi = (1, 6) if team == 'AB' else (7, 12)
-        rs, cs = np.where((self._grid >= lo) & (self._grid <= hi))
-        for r, c in zip(rs.tolist(), cs.tolist()):
-            yield r, c, INT_TO_PIECE[int(self._grid[r, c])]
+        """Yield (row, col, piece) for every piece belonging to team — O(n_pieces)."""
+        yield from (self._ab_pieces if team == 'AB' else self._uv_pieces)
 
     # ── move generation ────────────────────────────────────────────────────
 
     def legal_moves(self, row, col):
         """Return list of (row, col) destinations for the piece at (row, col)."""
-        piece_int = int(self._grid[row, col])
+        piece_int = self._grid[row, col]
         if piece_int == 0:
             return []
-        piece = INT_TO_PIECE[piece_int]
+        piece = INT_TO_PIECE[int(piece_int)]
         team_lo, team_hi = (1, 6) if piece_int <= 6 else (7, 12)
         directions, max_steps = _PIECE_RULES[piece]
         moves = []
@@ -117,7 +150,7 @@ class Board:
                 r, c = row + dr * step, col + dc * step
                 if not (0 <= r < 8 and 0 <= c < 8):
                     break
-                target = int(self._grid[r, c])
+                target = self._grid[r, c]
                 if target == 0:
                     moves.append((r, c))
                 elif not (team_lo <= target <= team_hi):
@@ -138,11 +171,22 @@ class Board:
     # ── mutation ───────────────────────────────────────────────────────────
 
     def apply_move(self, from_pos, to_pos):
-        """Execute move; return captured piece or None."""
+        """Execute move; return captured piece or None. Updates piece lists."""
         r1, c1 = from_pos
         r2, c2 = to_pos
         piece_int    = int(self._grid[r1, c1])
         captured_int = int(self._grid[r2, c2])
+        piece_str    = INT_TO_PIECE[piece_int]
+
+        mover_list = self._ab_pieces if piece_int <= 6 else self._uv_pieces
+        mover_list.remove((r1, c1, piece_str))
+        mover_list.append((r2, c2, piece_str))
+
+        if captured_int != 0:
+            captured_str  = INT_TO_PIECE[captured_int]
+            captured_list = self._ab_pieces if captured_int <= 6 else self._uv_pieces
+            captured_list.remove((r2, c2, captured_str))
+
         self._grid[r2, c2] = piece_int
         self._grid[r1, c1] = 0
         return INT_TO_PIECE[captured_int] if captured_int != 0 else None

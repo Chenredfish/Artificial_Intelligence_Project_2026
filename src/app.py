@@ -9,7 +9,7 @@ import json
 from flask import Flask, jsonify, request, render_template, Response, stream_with_context
 
 from .game import Game
-from .board import Board, PIECE_POINTS, get_team, _PIECE_RULES
+from .board import Board, PIECE_POINTS, get_team, _PIECE_RULES, PIECE_TO_INT
 
 
 class SearchTimeout(Exception):
@@ -166,6 +166,52 @@ NEAR_CENTER_SQUARES = {
     (5, 2), (5, 3), (5, 4), (5, 5),
 }
 
+# ── Pre-computed numpy arrays for Numba JIT ────────────────────────────────
+# Index 0 = empty (unused), 1-12 = PIECE_TO_INT encoding
+_WEIGHTS_ARR = np.zeros(13, dtype=np.float64)
+for _p, _i in PIECE_TO_INT.items():
+    _WEIGHTS_ARR[_i] = float(EVAL_PIECE_WEIGHTS[_p])
+
+_PST_ARR = np.zeros((13, 8, 8), dtype=np.float64)
+for _p, _i in PIECE_TO_INT.items():
+    _pt = PIECE_PST_TYPE.get(_p)
+    if _pt:
+        _PST_ARR[_i] = np.array(PIECE_SQUARE_TABLES[_pt], dtype=np.float64)
+
+_IS_AB_ARR = np.zeros(13, dtype=np.bool_)
+for _i in range(1, 7):   # A=1, B=2, c=3, d=4, e=5, f=6
+    _IS_AB_ARR[_i] = True
+
+_CENTER_ARR = np.zeros((8, 8), dtype=np.bool_)
+for _r, _c in CENTER_SQUARES:
+    _CENTER_ARR[_r, _c] = True
+
+_NEAR_CENTER_ARR = np.zeros((8, 8), dtype=np.bool_)
+for _r, _c in NEAR_CENTER_SQUARES:
+    _NEAR_CENTER_ARR[_r, _c] = True
+
+
+def _material_pst_score(grid, weights, pst, is_ab, center, near_center, maximizing_ab):
+    """Material + PST + centre bonus — pure numpy array ops."""
+    score = 0.0
+    for r in range(8):
+        for c in range(8):
+            v = grid[r, c]
+            if v == 0:
+                continue
+            piece_value = weights[v] + 0.35 * pst[v, r, c]
+            if center[r, c]:
+                bonus = 0.20
+            elif near_center[r, c]:
+                bonus = 0.09
+            else:
+                bonus = 0.0
+            if is_ab[v] == maximizing_ab:
+                score += piece_value + bonus
+            else:
+                score -= piece_value + bonus
+    return score
+
 
 def piece_square_value(piece, row, col):
     base_type = PIECE_PST_TYPE.get(piece)
@@ -320,26 +366,8 @@ def evaluate_board(board, maximizing_team):
     own_influence = influence_map(board, maximizing_team)
     opp_influence = influence_map(board, opponent)
 
-    for r in range(8):
-        for c in range(8):
-            piece = board.get(r, c)
-            if piece is None:
-                continue
-            material = EVAL_PIECE_WEIGHTS[piece]
-            pst = piece_square_value(piece, r, c)
-            piece_value = material + 0.35 * pst
-            if get_team(piece) == maximizing_team:
-                score += piece_value
-                if (r, c) in CENTER_SQUARES:
-                    score += 0.20
-                elif (r, c) in NEAR_CENTER_SQUARES:
-                    score += 0.09
-            else:
-                score -= piece_value
-                if (r, c) in CENTER_SQUARES:
-                    score -= 0.20
-                elif (r, c) in NEAR_CENTER_SQUARES:
-                    score -= 0.09
+    score += _material_pst_score(board._grid, _WEIGHTS_ARR, _PST_ARR, _IS_AB_ARR,
+                                _CENTER_ARR, _NEAR_CENTER_ARR, maximizing_team == 'AB')
 
     score += mobility_score(board, maximizing_team, own_captures, own_non_capture, opp_captures, opp_non_capture, own_move_counts, opp_move_counts) * (0.40 + 0.50 * phase)
     score += activity_score(own_moves, own_captures, own_non_capture, opp_moves, opp_captures, opp_non_capture) * (0.20 + 0.20 * phase)
@@ -571,8 +599,7 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
 def _root_move_worker(args):
     """Top-level worker for ProcessPoolExecutor — evaluates one root move with iterative deepening."""
     board_grid, from_pos, to_pos, max_depth, team, opponent, use_nmp, nmp_r, use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit, use_pvs, use_mvv_lva = args
-    child = Board()
-    child._grid = board_grid.copy()
+    child = Board.from_grid_array(board_grid)
     child.apply_move(from_pos, to_pos)
     tt = {}
     hh = defaultdict(int)

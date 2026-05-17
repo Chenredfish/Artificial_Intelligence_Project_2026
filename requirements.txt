@@ -1,2 +1,4 @@
 flask>=3.0
 pytest
+numpy>=1.22
+numba>=0.60
