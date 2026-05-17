@@ -30,6 +30,8 @@ def get_team(piece):
 class Board:
     def __init__(self):
         self._grid = [[None] * 8 for _ in range(8)]
+        self._ab_pieces = []   # [(r, c, piece), ...]  O(1) pieces() lookup
+        self._uv_pieces = []
 
     # ── construction ───────────────────────────────────────────────────────
 
@@ -51,6 +53,10 @@ class Board:
                     board._grid[r][c] = None
                 elif cell in PIECE_POINTS:
                     board._grid[r][c] = cell
+                    if cell in AB_PIECES:
+                        board._ab_pieces.append((r, c, cell))
+                    else:
+                        board._uv_pieces.append((r, c, cell))
                 else:
                     raise ValueError(f"Invalid piece at ({r},{c}): {cell}")
 
@@ -75,7 +81,22 @@ class Board:
     def copy(self):
         new = Board()
         new._grid = [row[:] for row in self._grid]
+        new._ab_pieces = self._ab_pieces.copy()
+        new._uv_pieces = self._uv_pieces.copy()
         return new
+
+    def _rebuild_piece_lists(self):
+        """Rebuild _ab_pieces/_uv_pieces from _grid (used after raw grid assignment)."""
+        self._ab_pieces = []
+        self._uv_pieces = []
+        for r in range(8):
+            for c in range(8):
+                p = self._grid[r][c]
+                if p:
+                    if p in AB_PIECES:
+                        self._ab_pieces.append((r, c, p))
+                    else:
+                        self._uv_pieces.append((r, c, p))
 
     # ── accessors ──────────────────────────────────────────────────────────
 
@@ -83,15 +104,18 @@ class Board:
         return self._grid[row][col]
 
     def set(self, row, col, piece):
+        old = self._grid[row][col]
+        if old is not None:
+            lst = self._ab_pieces if old in AB_PIECES else self._uv_pieces
+            lst.remove((row, col, old))
         self._grid[row][col] = piece
+        if piece is not None:
+            lst = self._ab_pieces if piece in AB_PIECES else self._uv_pieces
+            lst.append((row, col, piece))
 
     def pieces(self, team):
-        """Yield (row, col, piece) for every piece belonging to team."""
-        for r in range(8):
-            for c in range(8):
-                p = self._grid[r][c]
-                if p and get_team(p) == team:
-                    yield r, c, p
+        """Yield (row, col, piece) for every piece belonging to team — O(n_pieces)."""
+        yield from (self._ab_pieces if team == 'AB' else self._uv_pieces)
 
     # ── move generation ────────────────────────────────────────────────────
 
@@ -129,11 +153,20 @@ class Board:
     # ── mutation ───────────────────────────────────────────────────────────
 
     def apply_move(self, from_pos, to_pos):
-        """Execute move; return captured piece or None."""
+        """Execute move; return captured piece or None. Updates piece lists."""
         r1, c1 = from_pos
         r2, c2 = to_pos
         piece    = self._grid[r1][c1]
         captured = self._grid[r2][c2]
+
+        mover_list = self._ab_pieces if piece in AB_PIECES else self._uv_pieces
+        mover_list.remove((r1, c1, piece))
+        mover_list.append((r2, c2, piece))
+
+        if captured is not None:
+            cap_list = self._ab_pieces if captured in AB_PIECES else self._uv_pieces
+            cap_list.remove((r2, c2, captured))
+
         self._grid[r2][c2] = piece
         self._grid[r1][c1] = None
         return captured

@@ -572,6 +572,7 @@ def _root_move_worker(args):
     board_grid, from_pos, to_pos, max_depth, team, opponent, use_nmp, nmp_r, use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit, use_pvs, use_mvv_lva = args
     child = Board()
     child._grid = [list(row) for row in board_grid]
+    child._rebuild_piece_lists()
     child.apply_move(from_pos, to_pos)
     tt = {}
     hh = defaultdict(int)
