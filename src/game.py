@@ -76,7 +76,7 @@ class Game:
             "round": current_round,
             "move": notation,
             "move_time": elapsed,
-            "total_time": self.total_time[self.current_team],
+            "total_time": self.total_time[current_team],
             "captured": captured,
         })
 

@@ -763,8 +763,6 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
 
     ab_moves = []
     uv_moves = []
-    ab_score = 0
-    uv_score = 0
     round_number = 1
     ab_move_log = []
     uv_move_log = []
@@ -798,7 +796,6 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
             if move is not None:
                 from_pos, to_pos = move
                 result = game.make_move(from_pos, to_pos)
-                gain = PIECE_POINTS.get(result['captured'], 0) if result['captured'] else 0
                 move_entry = {
                     'round': round_number,
                     'move': result['move'],
@@ -808,17 +805,17 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
                     'captured': result['captured'],
                 }
                 if team == 'AB':
-                    ab_score += gain
                     ab_moves.append(f"R{round_number} AB: {result['move']}")
                     ab_move_log.append(move_entry)
                 else:
-                    uv_score += gain
                     uv_moves.append(f"R{round_number} UV: {result['move']}")
                     uv_move_log.append(move_entry)
                 any_move = True
         if not any_move:
             break
 
+    ab_score = game.capture_score['AB']
+    uv_score = game.capture_score['UV']
     if ab_score > uv_score:
         winner = 'AB'
     elif uv_score > ab_score:
