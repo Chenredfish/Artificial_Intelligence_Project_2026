@@ -80,6 +80,9 @@ DEFAULT_NMP_R = 2          # null move reduction factor
 DEFAULT_LMR_MIN_DEPTH = 3  # minimum depth to apply LMR
 DEFAULT_LMR_MOVE_INDEX = 3 # start reducing moves at this index (0-based)
 ASPIRATION_WINDOW = 50     # aspiration window half-width for iterative deepening
+DEFAULT_STABILITY_DEPTH_COUNT = 3    # consecutive completed depths with same best move to declare convergence
+DEFAULT_STABILITY_SCORE_THRESHOLD = 15  # max score variation across those depths
+MAX_TT_SIZE = 400_000                # hard cap on transposition table entries to prevent OOM
 
 # 評估函式：更細緻的 L7 版本，包含棋種價值差異、位置、中心控制、行動力與攻防交換
 EVAL_PIECE_WEIGHTS = {
@@ -563,7 +566,7 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
             if beta <= alpha:
                 break
 
-    if transposition_table is not None:
+    if transposition_table is not None and (len(transposition_table) < MAX_TT_SIZE or tt_key in transposition_table):
         if best <= alpha_orig:
             flag = 'UPPERBOUND'
         elif best >= beta_orig:
@@ -582,7 +585,7 @@ def minimax(board, team, depth, maximizing_team, alpha=-float('inf'), beta=float
 
 def _root_move_worker(args):
     """Top-level worker for ProcessPoolExecutor — evaluates one root move with iterative deepening."""
-    board_grid, from_pos, to_pos, max_depth, team, opponent, use_nmp, nmp_r, use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit, use_pvs, use_mvv_lva = args
+    board_grid, from_pos, to_pos, max_depth, team, opponent, use_nmp, nmp_r, use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit, use_pvs, use_mvv_lva, moves_left, use_stability, stability_depth_count, stability_score_threshold = args
     child = Board()
     child._grid = [list(row) for row in board_grid]
     child._rebuild_piece_lists()
@@ -591,7 +594,11 @@ def _root_move_worker(args):
     hh = defaultdict(int)
     best_value = -float('inf')
     last_depth = 0
-    for d in range(1, max_depth + 1):
+    # root move already applied — child has one fewer half-move remaining
+    child_ml = moves_left - 1 if moves_left is not None else None
+    eff_depth = min(max_depth, child_ml) if child_ml is not None else max_depth
+    value_history = []
+    for d in range(1, eff_depth + 1):
         if time_limit is not None and start_time is not None and time.time() - start_time >= time_limit:
             break
         try:
@@ -602,12 +609,18 @@ def _root_move_worker(args):
                           use_pvs=use_pvs, use_mvv_lva=use_mvv_lva)
             best_value = val
             last_depth = d
+            if use_stability:
+                value_history.append(val)
+                if len(value_history) >= stability_depth_count:
+                    recent = value_history[-stability_depth_count:]
+                    if max(recent) - min(recent) < stability_score_threshold:
+                        break
         except SearchTimeout:
             break
     return (best_value, from_pos, to_pos, last_depth)
 
 
-def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False, use_asp=True, asp_window=ASPIRATION_WINDOW, use_pvs=True, use_mvv_lva=True):
+def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False, use_asp=True, asp_window=ASPIRATION_WINDOW, use_pvs=True, use_mvv_lva=True, moves_left=None, use_stability=False, stability_depth_count=DEFAULT_STABILITY_DEPTH_COUNT, stability_score_threshold=DEFAULT_STABILITY_SCORE_THRESHOLD):
     global _last_depth_reached
     moves = board.all_legal_moves(team)
     if not moves:
@@ -617,14 +630,17 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
         time_limit = None
 
     start_time = time.time()
+    effective_depth = min(depth, moves_left) if moves_left is not None else depth
 
     # Parallel root search: each worker does iterative deepening with the shared deadline
     if use_parallel and depth > 1:
         opponent = 'UV' if team == 'AB' else 'AB'
         board_grid = tuple(tuple(row) for row in board._grid)
+        child_ml = moves_left - 1 if moves_left is not None else None
         args_list = [
-            (board_grid, fp, tp, depth, team, opponent, use_nmp, nmp_r,
-             use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit, use_pvs, use_mvv_lva)
+            (board_grid, fp, tp, effective_depth, team, opponent, use_nmp, nmp_r,
+             use_lmr, lmr_min_depth, lmr_move_index, start_time, time_limit, use_pvs, use_mvv_lva,
+             child_ml, use_stability, stability_depth_count, stability_score_threshold)
             for fp, tp in moves
         ]
         with ProcessPoolExecutor() as executor:
@@ -642,8 +658,9 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
     history_heuristic = defaultdict(int)
     prev_best_value = None  # tracks last completed depth score for aspiration window
     _last_depth_reached = 0
+    stability_history = []  # list of (best_move, best_value) per completed depth
 
-    for current_depth in range(1, depth + 1):
+    for current_depth in range(1, effective_depth + 1):
         if time_limit is not None and time.time() - start_time >= time_limit:
             break
 
@@ -712,6 +729,14 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
         if depth_reliable and current_moves:
             last_completed_moves = current_moves
             _last_depth_reached = current_depth
+            if use_stability:
+                stability_history.append((current_moves[0], best_value))
+                if len(stability_history) >= stability_depth_count:
+                    recent = stability_history[-stability_depth_count:]
+                    same_move = all(m == recent[0][0] for m, _ in recent)
+                    score_delta = max(v for _, v in recent) - min(v for _, v in recent)
+                    if same_move and score_delta < stability_score_threshold:
+                        break
             root_key = (board_key(board), team, team)
             transposition_table[root_key] = {
                 'depth': current_depth,
@@ -743,17 +768,20 @@ def choose_greedy_move(board, team):
     return random.choice(moves)
 
 
-def choose_move_by_strategy(board, team, strategy, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False, use_asp=True, asp_window=ASPIRATION_WINDOW, use_pvs=True, use_mvv_lva=True):
+def choose_move_by_strategy(board, team, strategy, depth=MINIMAX_DEPTH, time_limit=None, use_nmp=True, nmp_r=DEFAULT_NMP_R, use_lmr=True, lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, lmr_move_index=DEFAULT_LMR_MOVE_INDEX, use_parallel=False, use_asp=True, asp_window=ASPIRATION_WINDOW, use_pvs=True, use_mvv_lva=True, moves_left=None, use_stability=False, stability_depth_count=DEFAULT_STABILITY_DEPTH_COUNT, stability_score_threshold=DEFAULT_STABILITY_SCORE_THRESHOLD):
     if strategy == 'random':
         moves = board.all_legal_moves(team)
         return random.choice(moves) if moves else None
     if strategy == 'greedy':
         return choose_greedy_move(board, team)
-    return choose_minimax_move(board, team, depth=depth, time_limit=time_limit, use_nmp=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, use_parallel=use_parallel, use_asp=use_asp, asp_window=asp_window, use_pvs=use_pvs, use_mvv_lva=use_mvv_lva)
+    return choose_minimax_move(board, team, depth=depth, time_limit=time_limit, use_nmp=use_nmp, nmp_r=nmp_r, use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index, use_parallel=use_parallel, use_asp=use_asp, asp_window=asp_window, use_pvs=use_pvs, use_mvv_lva=use_mvv_lva, moves_left=moves_left, use_stability=use_stability, stability_depth_count=stability_depth_count, stability_score_threshold=stability_score_threshold)
 
 
-def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, ab_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, ab_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, uv_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, uv_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, ab_parallel=False, uv_parallel=False, ab_asp=True, uv_asp=True, ab_asp_window=ASPIRATION_WINDOW, uv_asp_window=ASPIRATION_WINDOW, ab_pvs=True, uv_pvs=True, ab_mvv_lva=True, uv_mvv_lva=True):
+def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_time_limit=None, uv_time_limit=None, ab_strategy='minimax', uv_strategy='minimax', ab_nmp=True, uv_nmp=True, ab_nmp_r=DEFAULT_NMP_R, uv_nmp_r=DEFAULT_NMP_R, first_team='random', ab_lmr=True, uv_lmr=True, ab_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, ab_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, uv_lmr_min_depth=DEFAULT_LMR_MIN_DEPTH, uv_lmr_move_index=DEFAULT_LMR_MOVE_INDEX, ab_parallel=False, uv_parallel=False, ab_asp=True, uv_asp=True, ab_asp_window=ASPIRATION_WINDOW, uv_asp_window=ASPIRATION_WINDOW, ab_pvs=True, uv_pvs=True, ab_mvv_lva=True, uv_mvv_lva=True, ab_use_stability=False, ab_stability_depth_count=DEFAULT_STABILITY_DEPTH_COUNT, ab_stability_score_threshold=DEFAULT_STABILITY_SCORE_THRESHOLD, uv_use_stability=False, uv_stability_depth_count=DEFAULT_STABILITY_DEPTH_COUNT, uv_stability_score_threshold=DEFAULT_STABILITY_SCORE_THRESHOLD):
     global _last_depth_reached
+    # Per-team time limits: explicit ab/uv_time_limit override the shared time_limit fallback
+    _ab_tl = ab_time_limit if ab_time_limit is not None else time_limit
+    _uv_tl = uv_time_limit if uv_time_limit is not None else time_limit
     board = Board.random_legal_board()
     game = Game(board=board)
     actual_first = random.choice(['AB', 'UV']) if first_team == 'random' else first_team
@@ -787,9 +815,14 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
             asp_w     = ab_asp_window if team == 'AB' else uv_asp_window
             pvs       = ab_pvs      if team == 'AB' else uv_pvs
             mvv_lva   = ab_mvv_lva  if team == 'AB' else uv_mvv_lva
+            stability  = ab_use_stability           if team == 'AB' else uv_use_stability
+            stab_n     = ab_stability_depth_count   if team == 'AB' else uv_stability_depth_count
+            stab_t     = ab_stability_score_threshold if team == 'AB' else uv_stability_score_threshold
+            tl        = _ab_tl if team == 'AB' else _uv_tl
             _last_depth_reached = 0
             game.start_turn_timer()
-            move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp, nmp_r=nmp_r_val, use_lmr=lmr, lmr_min_depth=lmr_min, lmr_move_index=lmr_idx, use_parallel=parallel, use_asp=asp, asp_window=asp_w, use_pvs=pvs, use_mvv_lva=mvv_lva)
+            moves_left = game.max_rounds * 2 - len(game.move_history)
+            move = choose_move_by_strategy(game.board, team, strategy, depth, tl, use_nmp=nmp, nmp_r=nmp_r_val, use_lmr=lmr, lmr_min_depth=lmr_min, lmr_move_index=lmr_idx, use_parallel=parallel, use_asp=asp, asp_window=asp_w, use_pvs=pvs, use_mvv_lva=mvv_lva, moves_left=moves_left, use_stability=stability, stability_depth_count=stab_n, stability_score_threshold=stab_t)
             depth_reached = _last_depth_reached
             if move is not None:
                 from_pos, to_pos = move
@@ -800,7 +833,7 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
                     'move': result['move'],
                     'depth': depth_reached,
                     'time': round(move_time, 3),
-                    'time_pct': round(move_time / time_limit * 100, 1) if time_limit else None,
+                    'time_pct': round(move_time / tl * 100, 1) if tl else None,
                     'captured': result['captured'],
                 }
                 if team == 'AB':
@@ -854,14 +887,16 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
 
 def _game_worker(args):
     """Module-level worker for game-level parallelism. Move-level parallel is forced OFF."""
-    (game_idx, ab_depth, uv_depth, time_limit, ab_strategy, uv_strategy,
+    (game_idx, ab_depth, uv_depth, ab_time_limit, uv_time_limit, ab_strategy, uv_strategy,
      ab_nmp, uv_nmp, ab_nmp_r, uv_nmp_r, first_team,
      ab_lmr, uv_lmr, ab_lmr_min_depth, ab_lmr_move_index,
      uv_lmr_min_depth, uv_lmr_move_index,
      ab_asp, uv_asp, ab_asp_window, uv_asp_window, ab_pvs, uv_pvs,
-     ab_mvv_lva, uv_mvv_lva) = args
+     ab_mvv_lva, uv_mvv_lva,
+     ab_use_stability, ab_stability_depth_count, ab_stability_score_threshold,
+     uv_use_stability, uv_stability_depth_count, uv_stability_score_threshold) = args
     gr = play_ai_battle_game(
-        ab_depth, uv_depth, rounds=20, time_limit=time_limit,
+        ab_depth, uv_depth, rounds=20, ab_time_limit=ab_time_limit, uv_time_limit=uv_time_limit,
         ab_strategy=ab_strategy, uv_strategy=uv_strategy,
         ab_nmp=ab_nmp, uv_nmp=uv_nmp, ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r,
         first_team=first_team, ab_lmr=ab_lmr, uv_lmr=uv_lmr,
@@ -871,6 +906,8 @@ def _game_worker(args):
         ab_asp=ab_asp, uv_asp=uv_asp, ab_asp_window=ab_asp_window, uv_asp_window=uv_asp_window,
         ab_pvs=ab_pvs, uv_pvs=uv_pvs,
         ab_mvv_lva=ab_mvv_lva, uv_mvv_lva=uv_mvv_lva,
+        ab_use_stability=ab_use_stability, ab_stability_depth_count=ab_stability_depth_count, ab_stability_score_threshold=ab_stability_score_threshold,
+        uv_use_stability=uv_use_stability, uv_stability_depth_count=uv_stability_depth_count, uv_stability_score_threshold=uv_stability_score_threshold,
     )
     return game_idx, gr
 
@@ -896,13 +933,22 @@ def api_ask_ai():
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error': 'Invalid parameter value.'}), 400
 
+    use_stability = bool(data.get('use_stability', False))
+    try:
+        depth_req = data.get('depth')
+        depth = max(1, min(int(depth_req), 50)) if depth_req is not None else (50 if (time_limit and time_limit > 0) else MINIMAX_DEPTH)
+        stability_depth_count     = max(2, min(int(data.get('stability_depth_count',     DEFAULT_STABILITY_DEPTH_COUNT)),     10))
+        stability_score_threshold = max(1, min(int(data.get('stability_score_threshold', DEFAULT_STABILITY_SCORE_THRESHOLD)), 500))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error': 'Invalid parameter value.'}), 400
+
     _game.start_turn_timer()
 
     moves = _game.board.all_legal_moves(_game.current_team)
     if not moves:
         return jsonify({'ok': False, 'error': 'No legal moves available'}), 400
 
-    depth = 50 if (time_limit and time_limit > 0) else MINIMAX_DEPTH
+    moves_left = _game.max_rounds * 2 - len(_game.move_history)
     move = choose_minimax_move(
         _game.board, _game.current_team,
         depth=depth, time_limit=time_limit,
@@ -910,6 +956,8 @@ def api_ask_ai():
         use_lmr=use_lmr, lmr_min_depth=lmr_min_depth, lmr_move_index=lmr_move_index,
         use_pvs=use_pvs, use_mvv_lva=use_mvv_lva, use_parallel=use_parallel,
         use_asp=use_asp, asp_window=asp_window,
+        moves_left=moves_left,
+        use_stability=use_stability, stability_depth_count=stability_depth_count, stability_score_threshold=stability_score_threshold,
     )
     if move is None:
         return jsonify({'ok': False, 'error': 'No valid AI move found.'}), 400
@@ -966,8 +1014,10 @@ def api_ai_battle():
         ab_depth = int(data.get('ab_depth', MINIMAX_DEPTH))
         uv_depth = int(data.get('uv_depth', MINIMAX_DEPTH))
         games = int(data.get('games', 10))
-        time_limit = data.get('time_limit')
-        time_limit = None if time_limit is None else float(time_limit)
+        _abt = data.get('ab_time_limit', data.get('time_limit'))
+        _uvt = data.get('uv_time_limit', data.get('time_limit'))
+        ab_time_limit = None if _abt is None else (None if float(_abt) <= 0 else float(_abt))
+        uv_time_limit = None if _uvt is None else (None if float(_uvt) <= 0 else float(_uvt))
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error': 'Depth, game count, and time limit must be numbers.'}), 400
 
@@ -1018,6 +1068,15 @@ def api_ai_battle():
         uv_asp_window = max(5, min(int(data.get('uv_asp_window', ASPIRATION_WINDOW)), 500))
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error': 'asp_window must be a number.'}), 400
+    ab_use_stability = bool(data.get('ab_use_stability', False))
+    uv_use_stability = bool(data.get('uv_use_stability', False))
+    try:
+        ab_stability_depth_count     = max(2, min(int(data.get('ab_stability_depth_count',     DEFAULT_STABILITY_DEPTH_COUNT)),     10))
+        ab_stability_score_threshold = max(1, min(int(data.get('ab_stability_score_threshold', DEFAULT_STABILITY_SCORE_THRESHOLD)), 500))
+        uv_stability_depth_count     = max(2, min(int(data.get('uv_stability_depth_count',     DEFAULT_STABILITY_DEPTH_COUNT)),     10))
+        uv_stability_score_threshold = max(1, min(int(data.get('uv_stability_score_threshold', DEFAULT_STABILITY_SCORE_THRESHOLD)), 500))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error': 'stability params must be numbers.'}), 400
 
     global _battle_stop
     _battle_stop = False
@@ -1034,12 +1093,14 @@ def api_ai_battle():
             # Game-level parallel: run multiple games simultaneously.
             # Move-level parallel is forced OFF inside _game_worker (no nested pools on Windows).
             _wargs = [
-                (i, ab_depth, uv_depth, time_limit, ab_strategy, uv_strategy,
+                (i, ab_depth, uv_depth, ab_time_limit, uv_time_limit, ab_strategy, uv_strategy,
                  ab_nmp, uv_nmp, ab_nmp_r, uv_nmp_r, first_team,
                  ab_lmr, uv_lmr, ab_lmr_min_depth, ab_lmr_move_index,
                  uv_lmr_min_depth, uv_lmr_move_index,
                  ab_asp, uv_asp, ab_asp_window, uv_asp_window, ab_pvs, uv_pvs,
-                 ab_mvv_lva, uv_mvv_lva)
+                 ab_mvv_lva, uv_mvv_lva,
+                 ab_use_stability, ab_stability_depth_count, ab_stability_score_threshold,
+                 uv_use_stability, uv_stability_depth_count, uv_stability_score_threshold)
                 for i in range(games)
             ]
             completed_count = 0
@@ -1098,7 +1159,7 @@ def api_ai_battle():
                 if _battle_stop:
                     break
                 gr = play_ai_battle_game(
-                    ab_depth, uv_depth, rounds=20, time_limit=time_limit,
+                    ab_depth, uv_depth, rounds=20, ab_time_limit=ab_time_limit, uv_time_limit=uv_time_limit,
                     ab_strategy=ab_strategy, uv_strategy=uv_strategy,
                     ab_nmp=ab_nmp, uv_nmp=uv_nmp,
                     ab_nmp_r=ab_nmp_r, uv_nmp_r=uv_nmp_r,
@@ -1110,6 +1171,8 @@ def api_ai_battle():
                     ab_asp=ab_asp, uv_asp=uv_asp, ab_asp_window=ab_asp_window, uv_asp_window=uv_asp_window,
                     ab_pvs=ab_pvs, uv_pvs=uv_pvs,
                     ab_mvv_lva=ab_mvv_lva, uv_mvv_lva=uv_mvv_lva,
+                    ab_use_stability=ab_use_stability, ab_stability_depth_count=ab_stability_depth_count, ab_stability_score_threshold=ab_stability_score_threshold,
+                    uv_use_stability=uv_use_stability, uv_stability_depth_count=uv_stability_depth_count, uv_stability_score_threshold=uv_stability_score_threshold,
                 )
                 if gr['winner'] == 'AB':
                     ab_wins += 1
