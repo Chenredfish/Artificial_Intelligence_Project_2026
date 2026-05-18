@@ -341,7 +341,7 @@
     <div id="ai-settings" style="font-size:11px; margin-top:6px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; color:#cdd6f4;">
       <label><input type="checkbox" id="ai-parallel" checked> 平行</label>
       <label><input type="checkbox" id="ai-nmp" checked> NMP R=<input id="ai-nmp-r" type="number" min="1" max="4" value="2" style="width:28px;"></label>
-      <label><input type="checkbox" id="ai-lmr" checked> LMR min-d=<input id="ai-lmr-min-depth" type="number" min="2" max="10" value="3" style="width:28px;"> start=<input id="ai-lmr-move-index" type="number" min="1" max="10" value="3" style="width:28px;"></label>
+      <label><input type="checkbox" id="ai-lmr" checked> LMR<span id="ai-lmr-params"> min-d=<input id="ai-lmr-min-depth" type="number" min="2" max="10" value="3" style="width:28px;"> start=<input id="ai-lmr-move-index" type="number" min="1" max="10" value="3" style="width:28px;"></span></label>
       <label><input type="checkbox" id="ai-pvs" checked> PVS</label>
       <label><input type="checkbox" id="ai-mvv-lva" checked> MVV-LVA</label>
       <label><input type="checkbox" id="ai-asp" checked> ASP W=<input id="ai-asp-w" type="number" min="5" max="500" value="50" style="width:44px;"></label>
@@ -787,6 +787,29 @@ document.getElementById('btn-ai').addEventListener('click', async () => {
 
   document.getElementById('btn-ai').disabled = false;
 });
+
+/* ── 單筆 AI 參數衝突同步 ───────────────────────────────────── */
+function syncAiPanel() {
+  const parOn = document.getElementById('ai-parallel').checked;
+  const lmrOn = document.getElementById('ai-lmr').checked;
+
+  // 平行模式繞過 ID loop → ASP 無作用
+  const aspCb = document.getElementById('ai-asp');
+  const aspW  = document.getElementById('ai-asp-w');
+  aspCb.disabled = parOn;
+  aspW.disabled  = parOn;
+  aspCb.closest('label').style.opacity = parOn ? '0.35' : '';
+  aspCb.closest('label').title = parOn ? '平行模式不使用 Aspiration Window' : '';
+
+  // LMR 關閉時子參數無意義
+  const paramsSpan = document.getElementById('ai-lmr-params');
+  document.getElementById('ai-lmr-min-depth').disabled  = !lmrOn;
+  document.getElementById('ai-lmr-move-index').disabled = !lmrOn;
+  paramsSpan.style.opacity = lmrOn ? '' : '0.35';
+}
+document.getElementById('ai-parallel').addEventListener('change', syncAiPanel);
+document.getElementById('ai-lmr').addEventListener('change', syncAiPanel);
+syncAiPanel();
 
 document.getElementById('battle-ab-strategy').addEventListener('change', function () {
   const show = this.value === 'minimax' ? '' : 'none';
