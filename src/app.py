@@ -963,9 +963,8 @@ def api_ai_battle():
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error': 'Depth, game count, and time limit must be numbers.'}), 400
 
-    max_depth = 50 if (time_limit and time_limit > 0) else 8
-    ab_depth = max(1, min(ab_depth, max_depth))
-    uv_depth = max(1, min(uv_depth, max_depth))
+    ab_depth = max(1, min(ab_depth, 50))
+    uv_depth = max(1, min(uv_depth, 50))
     if games < 1 or games > 200:
         return jsonify({'ok': False, 'error': 'Game count must be between 1 and 200.'}), 400
 

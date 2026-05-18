@@ -344,6 +344,7 @@
       <label><input type="checkbox" id="ai-lmr" checked> LMR min-d=<input id="ai-lmr-min-depth" type="number" min="2" max="10" value="3" style="width:28px;"> start=<input id="ai-lmr-move-index" type="number" min="1" max="10" value="3" style="width:28px;"></label>
       <label><input type="checkbox" id="ai-pvs" checked> PVS</label>
       <label><input type="checkbox" id="ai-mvv-lva" checked> MVV-LVA</label>
+      <label><input type="checkbox" id="ai-asp" checked> ASP W=<input id="ai-asp-w" type="number" min="5" max="500" value="50" style="width:44px;"></label>
     </div>
 
     <div id="ai-suggestion" style="font-size:12px; margin-top:8px; color:#f9e2af;">
@@ -720,6 +721,8 @@ document.getElementById('btn-ai').addEventListener('click', async () => {
   const lmrMoveIndex = parseInt(document.getElementById('ai-lmr-move-index').value, 10) || 3;
   const usePvs       = document.getElementById('ai-pvs').checked;
   const useMvvLva    = document.getElementById('ai-mvv-lva').checked;
+  const useAsp       = document.getElementById('ai-asp').checked;
+  const aspWindow    = parseInt(document.getElementById('ai-asp-w').value, 10) || 50;
 
   const data = await apiPost('/api/ask_ai', {
     auto_apply: autoApply,
@@ -728,6 +731,7 @@ document.getElementById('btn-ai').addEventListener('click', async () => {
     use_nmp: useNmp, nmp_r: nmpR,
     use_lmr: useLmr, lmr_min_depth: lmrMinDepth, lmr_move_index: lmrMoveIndex,
     use_pvs: usePvs, use_mvv_lva: useMvvLva,
+    use_asp: useAsp, asp_window: aspWindow,
   });
 
   if (!data.ok) {
