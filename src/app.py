@@ -1206,6 +1206,7 @@ def api_apply_ai_suggestion():
     try:
         result = _game.make_move(from_pos, to_pos)
         result['state'] = _game.get_state()
+        result['depth_reached'] = _last_depth_reached
         return jsonify({'ok': True, **result})
     except ValueError as e:
         _game.turn_start_time = None

@@ -275,6 +275,34 @@
     .depth-hist-title { font-size:10px; color:#6c7086; margin-bottom:3px; }
     .depth-bar-row { display:flex; align-items:center; gap:5px; font-size:10px; margin-bottom:2px; }
     .depth-bar { height:9px; background:#89b4fa; border-radius:2px; min-width:2px; }
+
+    /* ── Game over modal ──────────────────────────── */
+    #gameover-overlay {
+      display:none; position:fixed; inset:0;
+      background:rgba(0,0,0,.82); z-index:600;
+      align-items:flex-start; justify-content:center;
+      padding:40px 20px; overflow-y:auto;
+    }
+    #gameover-overlay.open { display:flex; }
+    #gameover-box {
+      background:#1e1e2e; border:1px solid #585b70;
+      border-radius:10px; padding:20px 24px;
+      width:820px; max-width:98vw; position:relative;
+    }
+    .gameover-close {
+      position:absolute; top:12px; right:16px;
+      background:none; border:none; color:#f38ba8;
+      font-size:18px; cursor:pointer; line-height:1;
+    }
+    .gameover-close:hover { color:#cdd6f4; }
+    #go-banner {
+      text-align:center; padding:14px;
+      background:#313244; border-radius:6px; margin-bottom:14px;
+    }
+    #gameover-summary { display:flex; gap:14px; margin-bottom:14px; }
+    .go-panel { flex:1; background:#313244; border-radius:6px; padding:10px 14px; }
+    .go-panel h4 { font-size:12px; margin-bottom:6px; }
+    .go-stat { font-size:11px; color:#a6adc8; margin-bottom:3px; }
   </style>
 </head>
 <body>
@@ -567,6 +595,8 @@ let selected   = null;   // [row, col] | null
 let validMoves = [];     // [[row, col], ...]
 let lastMove   = null;   // result object from /api/move or /api/ask_ai
 let pendingAiMove = null;
+let singleGameMoveStats = [];   // [{depth_reached}] parallel to state.move_history
+let gameOverModalShown  = false;
 
 /* ── fetch helpers ───────────────────────────── */
 async function apiFetch(url) {
@@ -635,6 +665,11 @@ function updatePanel() {
   document.getElementById('game-over-banner').style.display =
     state.game_over ? 'block' : 'none';
   document.getElementById('btn-ai').disabled = state.game_over;
+
+  if (state.game_over && !gameOverModalShown) {
+    gameOverModalShown = true;
+    showGameOverModal();
+  }
 }
 
 function addHistoryEntry(result) {
@@ -700,6 +735,7 @@ function applyMoveResult(data) {
   selected      = null;
   validMoves    = [];
   pendingAiMove = null;
+  singleGameMoveStats.push({ depth_reached: data.depth_reached ?? 0 });
   document.getElementById('btn-confirm-ai').disabled = true;
   document.getElementById('ai-suggestion').textContent = 'AI suggestion: —';
   renderBoard();
@@ -1141,6 +1177,8 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
   }
   lastMove = null;
   pendingAiMove = null;
+  singleGameMoveStats = [];
+  gameOverModalShown  = false;
   state    = data.state;
   selected = null; validMoves = [];
 
@@ -1150,6 +1188,72 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
   renderBoard(); updatePanel(); closeModal();
 });
 
+/* ── Game over modal ─────────────────────────── */
+function showGameOverModal() {
+  const sc = state.capture_score;
+  const hist = state.move_history;
+
+  // winner
+  let winnerText, winnerCls;
+  if (sc.AB > sc.UV) { winnerText = 'AB 獲勝'; winnerCls = 'team-ab'; }
+  else if (sc.UV > sc.AB) { winnerText = 'UV 獲勝'; winnerCls = 'team-uv'; }
+  else { winnerText = '平局'; winnerCls = ''; }
+  const scoreDiff = Math.abs(sc.AB - sc.UV);
+  const howText = sc.AB === sc.UV
+    ? `得分相同 (各 ${sc.AB} pts) — 平局`
+    : `比分 AB ${sc.AB} pts vs UV ${sc.UV} pts，差距 ${scoreDiff} pts`;
+
+  document.getElementById('go-banner').innerHTML =
+    `<span class="${winnerCls}" style="font-size:24px;font-weight:bold;">${winnerText}</span><br>` +
+    `<span style="font-size:13px;color:#a6adc8;font-weight:normal;">${howText}</span>`;
+
+  // per-team stats
+  ['AB', 'UV'].forEach(team => {
+    const teamMoves = hist.filter((m, i) => m.team === team);
+    const teamStats = hist.map((m, i) => ({ ...m, depth_reached: singleGameMoveStats[i]?.depth_reached ?? 0 }))
+                         .filter(m => m.team === team);
+    const aiMoves   = teamStats.filter(m => m.depth_reached > 0);
+    const depths    = aiMoves.map(m => m.depth_reached);
+    const times     = aiMoves.map(m => m.move_time);
+    const avgDepth  = depths.length ? (depths.reduce((a,b)=>a+b,0)/depths.length).toFixed(1) : '—';
+    const minDepth  = depths.length ? Math.min(...depths) : '—';
+    const maxDepth  = depths.length ? Math.max(...depths) : '—';
+    const avgTime   = times.length  ? (times.reduce((a,b)=>a+b,0)/times.length).toFixed(3) : '—';
+    const teamCls   = team === 'AB' ? 'team-ab' : 'team-uv';
+    document.getElementById(`go-panel-${team.toLowerCase()}`).innerHTML =
+      `<h4><span class="${teamCls}">${team}</span></h4>` +
+      `<div class="go-stat">總手數 <strong>${teamMoves.length}</strong>　AI 出手 <strong>${aiMoves.length}</strong>　(${teamMoves.length ? Math.round(aiMoves.length/teamMoves.length*100) : 0}%)</div>` +
+      `<div class="go-stat">平均層數 <strong>${avgDepth}</strong>　最小 ${minDepth}　最大 ${maxDepth}</div>` +
+      `<div class="go-stat">平均 AI 耗時 <strong>${avgTime}s</strong></div>`;
+  });
+
+  // move log table
+  const allStats = hist.map((m, i) => ({ ...m, depth_reached: singleGameMoveStats[i]?.depth_reached ?? 0 }));
+  let thtml = `<table class="detail-table"><thead>` +
+    `<tr><th>回合</th><th>隊伍</th><th>棋步</th><th>層數</th><th>耗時</th><th>吃子</th></tr>` +
+    `</thead><tbody>`;
+  for (const e of allStats) {
+    const depthStr = e.depth_reached > 0 ? e.depth_reached : '—';
+    const timeStr  = e.move_time > 0 ? e.move_time.toFixed(3) + 's' : '—';
+    const teamCls  = e.team === 'AB' ? 'team-ab' : 'team-uv';
+    thtml += `<tr>` +
+      `<td>${e.round}</td>` +
+      `<td><span class="${teamCls}">${e.team}</span></td>` +
+      `<td>${e.move}</td>` +
+      `<td>${depthStr}</td>` +
+      `<td>${timeStr}</td>` +
+      `<td>${e.captured || '—'}</td></tr>`;
+  }
+  thtml += `</tbody></table>`;
+  document.getElementById('go-table-wrap').innerHTML = thtml;
+
+  document.getElementById('gameover-overlay').classList.add('open');
+}
+
+function closeGameOverModal() {
+  document.getElementById('gameover-overlay').classList.remove('open');
+}
+
 /* ── init ────────────────────────────────────── */
 (async () => {
   state = await apiFetch('/api/state');
@@ -1157,6 +1261,19 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
   updatePanel();
 })();
 </script>
+
+<!-- ── Game over modal ───────────────────────────────────── -->
+<div id="gameover-overlay" onclick="if(event.target===this)closeGameOverModal()">
+  <div id="gameover-box">
+    <button class="gameover-close" onclick="closeGameOverModal()">✕</button>
+    <div id="go-banner"></div>
+    <div id="gameover-summary">
+      <div class="go-panel" id="go-panel-ab"></div>
+      <div class="go-panel" id="go-panel-uv"></div>
+    </div>
+    <div id="go-table-wrap"></div>
+  </div>
+</div>
 
 <!-- ── Detail modal ─────────────────────────────────────── -->
 <div id="detail-modal">
