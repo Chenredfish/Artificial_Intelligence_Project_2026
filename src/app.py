@@ -788,20 +788,19 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_strat
             pvs       = ab_pvs      if team == 'AB' else uv_pvs
             mvv_lva   = ab_mvv_lva  if team == 'AB' else uv_mvv_lva
             _last_depth_reached = 0
-            t0 = time.time()
+            game.start_turn_timer()
             move = choose_move_by_strategy(game.board, team, strategy, depth, time_limit, use_nmp=nmp, nmp_r=nmp_r_val, use_lmr=lmr, lmr_min_depth=lmr_min, lmr_move_index=lmr_idx, use_parallel=parallel, use_asp=asp, asp_window=asp_w, use_pvs=pvs, use_mvv_lva=mvv_lva)
-            move_time = time.time() - t0
             depth_reached = _last_depth_reached
-            time_pct = round(move_time / time_limit * 100, 1) if time_limit else None
             if move is not None:
                 from_pos, to_pos = move
                 result = game.make_move(from_pos, to_pos)
+                move_time = result['move_time']
                 move_entry = {
                     'round': round_number,
                     'move': result['move'],
                     'depth': depth_reached,
                     'time': round(move_time, 3),
-                    'time_pct': time_pct,
+                    'time_pct': round(move_time / time_limit * 100, 1) if time_limit else None,
                     'captured': result['captured'],
                 }
                 if team == 'AB':

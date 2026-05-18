@@ -1,4 +1,4 @@
-from src.board import Board
+from src.board import Board, PIECE_POINTS
 from src.game import Game
 
 
@@ -106,3 +106,38 @@ def test_timer_not_started_returns_zero():
     game = Game()
 
     assert game.get_elapsed_time() == 0.0
+
+
+def test_illegal_move_does_not_corrupt_round_counter():
+    grid = empty_board()
+    grid[3][3] = "A"
+    grid[4][4] = "U"
+    board = Board.from_grid(grid)
+    game = Game(board)
+
+    game.make_move((3, 3), (3, 4))  # AB round 1
+    game.make_move((4, 4), (4, 5))  # UV round 1
+    # AB's turn — attempt a diagonal move (A only moves orthogonally)
+    try:
+        game.make_move((3, 4), (4, 5))
+    except ValueError:
+        pass
+
+    assert game.get_round_counter() == 1   # must not have advanced
+    assert game.get_current_team() == "AB"
+
+    game.make_move((3, 4), (3, 5))         # legal AB move triggers round 2
+    assert game.get_round_counter() == 2
+
+
+def test_capture_score_updated():
+    grid = empty_board()
+    grid[3][3] = "A"   # AB heavy piece
+    grid[3][4] = "U"   # UV heavy piece one step away
+    board = Board.from_grid(grid)
+    game = Game(board)
+
+    game.make_move((3, 3), (3, 4))   # A captures U
+
+    assert game.capture_score["AB"] == PIECE_POINTS["U"]
+    assert game.capture_score["UV"] == 0
