@@ -916,6 +916,7 @@ def api_ask_ai():
     from_pos, to_pos = move
     piece = _game.board.get(from_pos[0], from_pos[1])
     notation = Board.format_move(piece, from_pos, to_pos)
+    depth_reached = _last_depth_reached
 
     # 開關關閉：只回傳 AI 建議，不移動棋子
     if not auto_apply:
@@ -923,6 +924,7 @@ def api_ask_ai():
         # 這樣人類決策時間不會被計入 move_time
         ai_elapsed = _game.get_elapsed_time()
         _game.turn_start_time = None
+        time_pct = round(ai_elapsed / time_limit * 100, 1) if (time_limit and time_limit > 0) else None
         return jsonify({
             'ok': True,
             'suggestion_only': True,
@@ -931,14 +933,20 @@ def api_ask_ai():
             'piece': piece,
             'move': notation,
             'ai_elapsed': ai_elapsed,
+            'depth_reached': depth_reached,
+            'time_pct': time_pct,
             'state': _game.get_state()
         })
 
     # 開關開啟：維持原本功能，AI 直接下棋
     try:
         result = _game.make_move(from_pos, to_pos)
+        move_time = result['move_time']
+        time_pct = round(move_time / time_limit * 100, 1) if (time_limit and time_limit > 0) else None
         result['state'] = _game.get_state()
         result['suggestion_only'] = False
+        result['depth_reached'] = depth_reached
+        result['time_pct'] = time_pct
         return jsonify({'ok': True, **result})
     except ValueError as e:
         return jsonify({'ok': False, 'error': str(e)}), 400

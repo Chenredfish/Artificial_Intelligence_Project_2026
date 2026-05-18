@@ -350,6 +350,7 @@
     <div id="ai-suggestion" style="font-size:12px; margin-top:8px; color:#f9e2af;">
       AI suggestion: —
     </div>
+    <div id="ai-move-stats" style="font-size:11px; margin-top:2px; color:#6c7086; display:none;"></div>
   </div>
 
   <div class="card">
@@ -742,11 +743,26 @@ document.getElementById('btn-ai').addEventListener('click', async () => {
     return;
   }
 
+  function showAiStats(moveTime, depthReached, timePct) {
+    const statsEl = document.getElementById('ai-move-stats');
+    const parts = [];
+    if (depthReached > 0) parts.push(`depth=${depthReached}`);
+    if (moveTime != null) parts.push(`${moveTime.toFixed(3)}s`);
+    if (timePct != null) parts.push(`${timePct}%`);
+    if (parts.length > 0) {
+      statsEl.textContent = parts.join('　');
+      statsEl.style.display = 'block';
+    } else {
+      statsEl.style.display = 'none';
+    }
+  }
+
   // 開關 ON：AI 直接下棋
   if (!data.suggestion_only) {
     applyMoveResult(data);
     document.getElementById('ai-suggestion').textContent =
       'AI moved: ' + data.move;
+    showAiStats(data.move_time, data.depth_reached, data.time_pct);
     return;
   }
 
@@ -760,6 +776,7 @@ document.getElementById('btn-ai').addEventListener('click', async () => {
 
   document.getElementById('ai-suggestion').textContent =
     'AI suggestion: ' + data.move;
+  showAiStats(data.ai_elapsed, data.depth_reached, data.time_pct);
 
   document.getElementById('btn-confirm-ai').disabled = false;
 
