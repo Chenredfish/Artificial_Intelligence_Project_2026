@@ -402,6 +402,7 @@
       </label>
       <label>場次 <input id="battle-games" type="number" min="1" max="200" value="10"></label>
       <label>時限(s) <input id="battle-time-limit" type="number" min="0" step="1" value="60"></label>
+      <span id="battle-nolimit-warn" style="display:none; color:#f38ba8; font-size:11px;" title="無時限時深度上限仍為50，每手可能極慢">⚠ 無時限</span>
       <label>多局並行 <input id="battle-game-workers" type="number" min="1" max="8" value="1" title="同時跑幾局（1=關閉）。啟用時步層級平行自動停用。"></label>
       <button class="btn" id="btn-ai-battle" style="padding:6px 10px;">Run</button>
       <button class="btn" id="btn-stop-battle" style="padding:6px 10px; display:none; background:#e74c3c; color:#fff;">停止</button>
@@ -832,6 +833,18 @@ document.getElementById('battle-game-workers').addEventListener('input', syncPar
     syncParallelMutex();
   });
 });
+
+/* ── 無時限警告 ─────────────────────────────── */
+(function () {
+  const timeLimitEl = document.getElementById('battle-time-limit');
+  const warnEl = document.getElementById('battle-nolimit-warn');
+  function updateWarn() {
+    const v = parseFloat(timeLimitEl.value);
+    warnEl.style.display = (Number.isFinite(v) && v > 0) ? 'none' : 'inline';
+  }
+  timeLimitEl.addEventListener('input', updateWarn);
+  updateWarn();
+})();
 
 document.getElementById('btn-stop-battle').addEventListener('click', async () => {
   document.getElementById('btn-stop-battle').disabled = true;
