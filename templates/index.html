@@ -659,7 +659,13 @@ async function onCellClick(r, c) {
 
   // clicking a highlighted destination → execute move
   if (selected && validMoves.some(([mr, mc]) => mr === r && mc === c)) {
-    await doMove(selected, [r, c]);
+    if (pendingAiMove &&
+        selected[0] === pendingAiMove.from_pos[0] && selected[1] === pendingAiMove.from_pos[1] &&
+        r === pendingAiMove.to_pos[0] && c === pendingAiMove.to_pos[1]) {
+      document.getElementById('btn-confirm-ai').click();
+    } else {
+      await doMove(selected, [r, c]);
+    }
     return;
   }
 
