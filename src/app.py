@@ -24,6 +24,14 @@ app = Flask(
 _game = Game()
 _battle_stop = False
 _last_depth_reached = 0
+_move_pool = None
+
+
+def _get_move_pool():
+    global _move_pool
+    if _move_pool is None:
+        _move_pool = ProcessPoolExecutor()
+    return _move_pool
 
 
 # ── pages ──────────────────────────────────────────────────────────────
@@ -643,8 +651,7 @@ def choose_minimax_move(board, team, depth=MINIMAX_DEPTH, time_limit=None, use_n
              child_ml, use_stability, stability_depth_count, stability_score_threshold)
             for fp, tp in moves
         ]
-        with ProcessPoolExecutor() as executor:
-            results = list(executor.map(_root_move_worker, args_list))
+        results = list(_get_move_pool().map(_root_move_worker, args_list))
         worker_depths = [d for _, _, _, d in results]
         _last_depth_reached = round(sum(worker_depths) / len(worker_depths)) if worker_depths else 0
         best_value = max(v for v, _, _, _ in results)
