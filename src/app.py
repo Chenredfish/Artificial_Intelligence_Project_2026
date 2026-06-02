@@ -25,6 +25,8 @@ _game = Game()
 _battle_stop = False
 _last_depth_reached = 0
 _move_pool = None
+_board_history_hashes: list = []  # board_key after each game half-move
+_repetition_hashes: set = set()   # recent N positions for repetition penalty
 
 
 def _get_move_pool():
@@ -71,6 +73,7 @@ def api_move():
     to_pos   = tuple(data['to_pos'])
     try:
         result = _game.make_move(from_pos, to_pos)
+        _board_history_hashes.append(board_key(_game.board))
         result['state'] = _game.get_state()
         return jsonify({'ok': True, **result})
     except ValueError as e:
@@ -88,6 +91,7 @@ DEFAULT_NMP_R = 2          # null move reduction factor
 DEFAULT_LMR_MIN_DEPTH = 3  # minimum depth to apply LMR
 DEFAULT_LMR_MOVE_INDEX = 3 # start reducing moves at this index (0-based)
 ASPIRATION_WINDOW = 50     # aspiration window half-width for iterative deepening
+REPETITION_PENALTY = 25    # evaluate_board penalty for revisiting a recent game position
 DEFAULT_STABILITY_DEPTH_COUNT = 3    # consecutive completed depths with same best move to declare convergence
 DEFAULT_STABILITY_SCORE_THRESHOLD = 15  # max score variation across those depths
 MAX_TT_SIZE = 400_000                # hard cap on transposition table entries to prevent OOM
@@ -370,6 +374,8 @@ def evaluate_board(board, maximizing_team):
     score += control_score(board, maximizing_team, own_influence, opp_influence)
     score += threatened_score(board, maximizing_team, own_influence, opp_influence)
     score += static_exchange_score(board, maximizing_team, own_attacks, opp_attacks, own_move_counts, opp_move_counts, own_influence, opp_influence)
+    if _repetition_hashes and board_key(board) in _repetition_hashes:
+        score -= REPETITION_PENALTY
     return score
 
 
@@ -792,14 +798,35 @@ def choose_greedy_move(board, team):
     return random.choice(moves)
 
 
-def suggest_relocation(board, evaluating_team='UV'):
+def _reloc_eval_worker(args):
+    """Worker: evaluate one relocation candidate (or baseline) via minimax in a subprocess."""
+    board_grid, from_pos, to_pos, first_mover, evaluating_team, depth, root_ml = args
+    trial = Board()
+    trial._grid = [list(row) for row in board_grid]
+    trial._rebuild_piece_lists()
+    if from_pos is not None:
+        piece = trial.get(from_pos[0], from_pos[1])
+        trial.set(from_pos[0], from_pos[1], None)
+        trial.set(to_pos[0], to_pos[1], piece)
+    tt = {}
+    hh = defaultdict(int)
+    score = minimax(trial, first_mover, depth, evaluating_team,
+                    transposition_table=tt, history_heuristic=hh,
+                    allow_null=False, use_lmr=False, use_pvs=True, use_mvv_lva=True,
+                    game_ml=root_ml)
+    return from_pos, to_pos, score
+
+
+def suggest_relocation(board, evaluating_team='UV', depth=0, top_n=15, moves_left=None, use_parallel=False):
     """Return (from_pos, to_pos, score) of the best pre-game piece relocation for evaluating_team.
-    Returns (None, None, baseline) when no relocation improves the position."""
-    baseline = evaluate_board(board, evaluating_team)
-    best_score = baseline
-    best_from = None
-    best_to = None
+    depth=0: static evaluation only (fast).
+    depth>0: static pre-filter to top_n candidates, then minimax re-ranking (slow but accurate).
+    Returns (None, None, baseline_score) when no relocation improves the position."""
+    first_mover = 'AB' if evaluating_team == 'UV' else 'UV'
     empty_squares = [(r, c) for r in range(8) for c in range(8) if board.get(r, c) is None]
+
+    # Phase 1: static evaluation of every (piece × empty_square) combination
+    candidates = []
     for r in range(8):
         for c in range(8):
             piece = board.get(r, c)
@@ -810,10 +837,62 @@ def suggest_relocation(board, evaluating_team='UV'):
                 trial.set(r, c, None)
                 trial.set(er, ec, piece)
                 score = evaluate_board(trial, evaluating_team)
-                if score > best_score:
-                    best_score = score
-                    best_from = (r, c)
-                    best_to = (er, ec)
+                candidates.append(((r, c), (er, ec), score))
+
+    if not candidates:
+        return None, None, evaluate_board(board, evaluating_team)
+
+    if depth == 0:
+        baseline = evaluate_board(board, evaluating_team)
+        best = max(candidates, key=lambda x: x[2])
+        if best[2] <= baseline:
+            return None, None, baseline
+        return best[0], best[1], best[2]
+
+    # Phase 2: minimax re-ranking of top_n static candidates
+    candidates.sort(key=lambda x: x[2], reverse=True)
+    top_candidates = candidates[:top_n]
+
+    root_ml = (moves_left - 1) if moves_left is not None else None
+    board_grid = [list(row) for row in board._grid]
+
+    # baseline (from_pos=None means no relocation) + top candidates
+    work_items = [(board_grid, None, None, first_mover, evaluating_team, depth, root_ml)]
+    work_items += [(board_grid, fp, tp, first_mover, evaluating_team, depth, root_ml)
+                   for fp, tp, _ in top_candidates]
+
+    if use_parallel:
+        results = list(_get_move_pool().map(_reloc_eval_worker, work_items))
+    else:
+        # Sequential with shared TT/HH for cross-candidate TT reuse
+        tt = {}
+        hh = defaultdict(int)
+        results = []
+        for item in work_items:
+            bg, fp, tp, fm, et, d, rml = item
+            trial = Board()
+            trial._grid = [list(row) for row in bg]
+            trial._rebuild_piece_lists()
+            if fp is not None:
+                piece = trial.get(fp[0], fp[1])
+                trial.set(fp[0], fp[1], None)
+                trial.set(tp[0], tp[1], piece)
+            score = minimax(trial, fm, d, et,
+                            transposition_table=tt, history_heuristic=hh,
+                            allow_null=False, use_lmr=False, use_pvs=True, use_mvv_lva=True,
+                            game_ml=rml)
+            results.append((fp, tp, score))
+
+    baseline_score = next(s for fp, tp, s in results if fp is None)
+    best_from = None
+    best_to = None
+    best_score = baseline_score
+    for fp, tp, score in results:
+        if fp is not None and score > best_score:
+            best_score = score
+            best_from = fp
+            best_to = tp
+
     return best_from, best_to, best_score
 
 
@@ -843,6 +922,7 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_time_
     round_number = 1
     ab_move_log = []
     uv_move_log = []
+    battle_board_hashes: list = []
 
     for round_number in range(1, rounds + 1):
         any_move = False
@@ -871,11 +951,17 @@ def play_ai_battle_game(ab_depth, uv_depth, rounds=20, time_limit=None, ab_time_
             _last_depth_reached = 0
             game.start_turn_timer()
             moves_left = game.max_rounds * 2 - len(game.move_history)
+            _repetition_hashes.clear()
+            _own_cs = game.capture_score[team]
+            _opp_cs = game.capture_score['UV' if team == 'AB' else 'AB']
+            if _own_cs <= _opp_cs:
+                _repetition_hashes.update(battle_board_hashes[-6:])
             move = choose_move_by_strategy(game.board, team, strategy, depth, tl, use_nmp=nmp, nmp_r=nmp_r_val, use_lmr=lmr, lmr_min_depth=lmr_min, lmr_move_index=lmr_idx, use_parallel=parallel, use_asp=asp, asp_window=asp_w, use_pvs=pvs, use_mvv_lva=mvv_lva, moves_left=moves_left, use_stability=stability, stability_depth_count=stab_n, stability_score_threshold=stab_t)
             depth_reached = _last_depth_reached
             if move is not None:
                 from_pos, to_pos = move
                 result = game.make_move(from_pos, to_pos)
+                battle_board_hashes.append(board_key(game.board))
                 move_time = result['move_time']
                 move_entry = {
                     'round': round_number,
@@ -997,6 +1083,11 @@ def api_ask_ai():
     if not moves:
         return jsonify({'ok': False, 'error': 'No legal moves available'}), 400
 
+    _repetition_hashes.clear()
+    _own_score = _game.capture_score[_game.current_team]
+    _opp_score = _game.capture_score['UV' if _game.current_team == 'AB' else 'AB']
+    if _own_score <= _opp_score:  # behind or tied: penalise repeats to encourage breaking stalemate
+        _repetition_hashes.update(_board_history_hashes[-6:])
     moves_left = _game.max_rounds * 2 - len(_game.move_history)
     move = choose_minimax_move(
         _game.board, _game.current_team,
@@ -1317,6 +1408,7 @@ def api_apply_ai_suggestion():
 
     try:
         result = _game.make_move(from_pos, to_pos)
+        _board_history_hashes.append(board_key(_game.board))
         result['state'] = _game.get_state()
         result['depth_reached'] = _last_depth_reached
         return jsonify({'ok': True, **result})
@@ -1329,10 +1421,16 @@ def api_apply_ai_suggestion():
 def api_suggest_relocation():
     if _game.move_history:
         return jsonify({'ok': False, 'error': 'Game already started'}), 400
-    from_pos, to_pos, score = suggest_relocation(_game.board, 'UV')
+    data = request.get_json() or {}
+    try:
+        depth = max(0, min(int(data.get('depth', 0)), 10))
+    except (TypeError, ValueError):
+        depth = 0
+    moves_left = _game.max_rounds * 2  # no moves played yet — full 40 half-moves remain
+    from_pos, to_pos, score = suggest_relocation(_game.board, 'UV', depth=depth, moves_left=moves_left, use_parallel=True)
     if from_pos is None:
         return jsonify({'ok': True, 'no_improvement': True,
-                        'message': 'No relocation improves UV position'})
+                        'message': 'No relocation improves UV position', 'depth': depth})
     piece = _game.board.get(from_pos[0], from_pos[1])
     return jsonify({
         'ok': True,
@@ -1341,6 +1439,7 @@ def api_suggest_relocation():
         'to_pos': list(to_pos),
         'piece': piece,
         'score': round(score, 2),
+        'depth': depth,
     })
 
 
@@ -1366,6 +1465,8 @@ def api_apply_relocation():
 @app.route('/api/new_game', methods=['POST'])
 def api_new_game():
     global _game
+    _board_history_hashes.clear()
+    _repetition_hashes.clear()
     data = request.get_json() or {}
     grid = data.get('grid')
     try:
