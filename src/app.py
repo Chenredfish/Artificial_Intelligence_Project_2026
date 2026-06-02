@@ -1427,10 +1427,12 @@ def api_suggest_relocation():
     except (TypeError, ValueError):
         depth = 0
     moves_left = _game.max_rounds * 2  # no moves played yet — full 40 half-moves remain
+    t0 = time.time()
     from_pos, to_pos, score = suggest_relocation(_game.board, 'UV', depth=depth, moves_left=moves_left, use_parallel=True)
+    elapsed = round(time.time() - t0, 1)
     if from_pos is None:
         return jsonify({'ok': True, 'no_improvement': True,
-                        'message': 'No relocation improves UV position', 'depth': depth})
+                        'message': 'No relocation improves UV position', 'depth': depth, 'elapsed': elapsed})
     piece = _game.board.get(from_pos[0], from_pos[1])
     return jsonify({
         'ok': True,
@@ -1440,6 +1442,7 @@ def api_suggest_relocation():
         'piece': piece,
         'score': round(score, 2),
         'depth': depth,
+        'elapsed': elapsed,
     })
 
 

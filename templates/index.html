@@ -1199,7 +1199,7 @@ document.getElementById('help-overlay').addEventListener('click', (e) => {
 
 /* ── UV Relocation ───────────────────────────── */
 document.getElementById('btn-suggest-relocation').addEventListener('click', async () => {
-  const RELOC_DEPTH = 7;
+  const RELOC_DEPTH = 8;
   document.getElementById('relocation-suggestion').textContent = `深度搜尋中 (d=${RELOC_DEPTH})，請稍候…`;
   document.getElementById('btn-suggest-relocation').disabled = true;
   document.getElementById('btn-apply-relocation').disabled = true;
@@ -1212,14 +1212,14 @@ document.getElementById('btn-suggest-relocation').addEventListener('click', asyn
   if (data.no_improvement) {
     pendingRelocation = null;
     document.getElementById('btn-apply-relocation').disabled = true;
-    document.getElementById('relocation-suggestion').textContent = `建議：不異動（現況已最優，d=${data.depth}）`;
+    document.getElementById('relocation-suggestion').textContent = `建議：不異動（現況已最優，d=${data.depth}，${data.elapsed}s）`;
     renderBoard();
     return;
   }
   pendingRelocation = { from_pos: data.from_pos, to_pos: data.to_pos, piece: data.piece };
   document.getElementById('btn-apply-relocation').disabled = false;
   document.getElementById('relocation-suggestion').textContent =
-    `建議(d=${data.depth})：${data.piece}(${data.from_pos[0]},${data.from_pos[1]}) → (${data.to_pos[0]},${data.to_pos[1]})`;
+    `建議(d=${data.depth}, ${data.elapsed}s)：${data.piece}(${data.from_pos[0]},${data.from_pos[1]}) → (${data.to_pos[0]},${data.to_pos[1]})`;
   renderBoard();
 });
 
