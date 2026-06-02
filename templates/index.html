@@ -146,7 +146,11 @@
     #btn-ai  { background: #a6e3a1; color: #1e1e2e; }
     #btn-new { background: #6c7086; color: #cdd6f4; }
     #btn-confirm-ai { background: #f9e2af; color: #1e1e2e; }
+    #btn-suggest-relocation { background: #89dceb; color: #1e1e2e; }
+    #btn-apply-relocation   { background: #cba6f7; color: #1e1e2e; }
     #btn-row { display: flex; gap: 8px; }
+    .reloc-from { outline: 2px solid #cba6f7; outline-offset: -2px; }
+    .reloc-to   { outline: 2px dashed #cba6f7; outline-offset: -2px; background: rgba(203,166,247,0.15); }
 
     /* Move history */
     #history-list {
@@ -381,6 +385,15 @@
       AI suggestion: —
     </div>
     <div id="ai-move-stats" style="font-size:11px; margin-top:2px; color:#6c7086; display:none;"></div>
+
+    <div id="relocation-section" style="display:none; margin-top:10px; border-top:1px solid #45475a; padding-top:8px;">
+      <div style="font-size:12px; color:#89b4fa; margin-bottom:6px;">UV 開局異動</div>
+      <div style="display:flex; gap:6px;">
+        <button class="btn" id="btn-suggest-relocation" style="padding:4px 10px; font-size:12px;">建議異動</button>
+        <button class="btn" id="btn-apply-relocation" disabled style="padding:4px 10px; font-size:12px;">執行異動</button>
+      </div>
+      <div id="relocation-suggestion" style="font-size:11px; margin-top:6px; color:#cba6f7;">—</div>
+    </div>
   </div>
 
   <div class="card">
@@ -600,6 +613,7 @@ let selected   = null;   // [row, col] | null
 let validMoves = [];     // [[row, col], ...]
 let lastMove   = null;   // result object from /api/move or /api/ask_ai
 let pendingAiMove = null;
+let pendingRelocation = null;   // { from_pos, to_pos, piece }
 let singleGameMoveStats = [];   // [{depth_reached}] parallel to state.move_history
 let gameOverModalShown  = false;
 
@@ -641,6 +655,13 @@ function renderBoard() {
       if (validMoves.some(([mr, mc]) => mr === r && mc === c))
         cell.classList.add(empty ? 'vm-empty' : 'vm-capture');
 
+      if (pendingRelocation) {
+        if (pendingRelocation.from_pos[0] === r && pendingRelocation.from_pos[1] === c)
+          cell.classList.add('reloc-from');
+        if (pendingRelocation.to_pos[0] === r && pendingRelocation.to_pos[1] === c)
+          cell.classList.add('reloc-to');
+      }
+
       cell.addEventListener('click', () => onCellClick(r, c));
       el.appendChild(cell);
     }
@@ -670,6 +691,8 @@ function updatePanel() {
   document.getElementById('game-over-banner').style.display =
     state.game_over ? 'block' : 'none';
   document.getElementById('btn-ai').disabled = state.game_over;
+  document.getElementById('relocation-section').style.display =
+    state.move_history.length === 0 ? 'block' : 'none';
 
   if (state.game_over && !gameOverModalShown) {
     gameOverModalShown = true;
@@ -1174,6 +1197,45 @@ document.getElementById('help-overlay').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
 });
 
+/* ── UV Relocation ───────────────────────────── */
+document.getElementById('btn-suggest-relocation').addEventListener('click', async () => {
+  document.getElementById('relocation-suggestion').textContent = '計算中...';
+  document.getElementById('btn-suggest-relocation').disabled = true;
+  const data = await apiPost('/api/suggest_relocation', {});
+  document.getElementById('btn-suggest-relocation').disabled = false;
+  if (!data.ok) {
+    document.getElementById('relocation-suggestion').textContent = '錯誤: ' + data.error;
+    return;
+  }
+  if (data.no_improvement) {
+    pendingRelocation = null;
+    document.getElementById('btn-apply-relocation').disabled = true;
+    document.getElementById('relocation-suggestion').textContent = '建議：不異動（現況已最優）';
+    renderBoard();
+    return;
+  }
+  pendingRelocation = { from_pos: data.from_pos, to_pos: data.to_pos, piece: data.piece };
+  document.getElementById('btn-apply-relocation').disabled = false;
+  document.getElementById('relocation-suggestion').textContent =
+    `建議：${data.piece}(${data.from_pos[0]},${data.from_pos[1]}) → (${data.to_pos[0]},${data.to_pos[1]})`;
+  renderBoard();
+});
+
+document.getElementById('btn-apply-relocation').addEventListener('click', async () => {
+  if (!pendingRelocation) return;
+  const data = await apiPost('/api/apply_relocation', {
+    from_pos: pendingRelocation.from_pos,
+    to_pos:   pendingRelocation.to_pos,
+  });
+  if (!data.ok) { alert('異動失敗: ' + data.error); return; }
+  state = data.state;
+  pendingRelocation = null;
+  document.getElementById('btn-apply-relocation').disabled = true;
+  document.getElementById('relocation-suggestion').textContent = '異動完成';
+  renderBoard();
+  updatePanel();
+});
+
 /* ── New Game modal ──────────────────────────── */
 document.getElementById('btn-new').addEventListener('click', () => {
   document.getElementById('modal-error').textContent = '';
@@ -1219,12 +1281,15 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
   }
   lastMove = null;
   pendingAiMove = null;
+  pendingRelocation = null;
   singleGameMoveStats = [];
   gameOverModalShown  = false;
   state    = data.state;
   selected = null; validMoves = [];
 
   document.getElementById('btn-confirm-ai').disabled = true;
+  document.getElementById('btn-apply-relocation').disabled = true;
+  document.getElementById('relocation-suggestion').textContent = '—';
   document.getElementById('ai-suggestion').textContent = 'AI suggestion: —';
   document.getElementById('history-list').innerHTML = '';
   renderBoard(); updatePanel(); closeModal();
