@@ -386,6 +386,25 @@
     </div>
     <div id="ai-move-stats" style="font-size:11px; margin-top:2px; color:#6c7086; display:none;"></div>
 
+    <div id="deep-think-section" style="margin-top:10px; border-top:1px solid #45475a; padding-top:8px;">
+      <div style="font-size:12px; color:#89b4fa; margin-bottom:5px;">⏱ 深思系統</div>
+      <label style="font-size:12px; display:block; margin-bottom:5px;">
+        <input type="checkbox" id="time-track-toggle"> 啟用對手時間追蹤
+      </label>
+      <div id="time-track-panel" style="display:none; font-size:12px; margin-bottom:6px;">
+        <div style="display:flex; align-items:center; gap:4px; margin-bottom:3px;">
+          <span>對手本次(s):</span>
+          <input id="opp-move-time" type="number" min="0" step="0.1" style="width:60px; background:#313244; color:#cdd6f4; border:1px solid #585b70; padding:2px 4px; border-radius:3px;">
+          <button class="btn" id="btn-update-opp-time" style="padding:2px 8px; font-size:11px;">更新</button>
+        </div>
+        <div style="color:#6c7086; font-size:11px;">對手累計: <span id="opp-total-display">0.0</span>s　自動深度: <span id="auto-depth-display" style="color:#a6e3a1;">d=8</span></div>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="btn" id="btn-deep-think" style="padding:4px 10px; font-size:12px; background:#cba6f7; color:#1e1e2e;">深思(d=9)</button>
+        <span style="font-size:12px; color:#cba6f7;">剩餘 <span id="deep-think-count">3</span> 次</span>
+      </div>
+    </div>
+
     <div id="relocation-section" style="display:none; margin-top:10px; border-top:1px solid #45475a; padding-top:8px;">
       <div style="font-size:12px; color:#89b4fa; margin-bottom:6px;">UV 開局異動</div>
       <div style="display:flex; gap:6px;">
@@ -611,6 +630,9 @@ function generateRandomBoard() {
 let state      = null;
 let selected   = null;   // [row, col] | null
 let validMoves = [];     // [[row, col], ...]
+let oppTotalTime      = 0;
+let deepThinkRemaining = 3;
+let deepThinkActivated = false;
 let lastMove   = null;   // result object from /api/move or /api/ask_ai
 let pendingAiMove = null;
 let pendingRelocation = null;   // { from_pos, to_pos, piece }
@@ -795,8 +817,24 @@ document.getElementById('btn-ai').addEventListener('click', async () => {
   const useMvvLva    = document.getElementById('ai-mvv-lva').checked;
   const useAsp       = document.getElementById('ai-asp').checked;
   const aspWindow    = parseInt(document.getElementById('ai-asp-w').value, 10) || 50;
-  const aiDepth      = parseInt(document.getElementById('ai-depth').value, 10) || 7;
   const useStability = document.getElementById('ai-stability').checked;
+  const timeTrackOn  = document.getElementById('time-track-toggle').checked;
+  let aiDepth;
+  if (deepThinkActivated && deepThinkRemaining > 0) {
+    aiDepth = 9;
+    deepThinkActivated = false;
+    deepThinkRemaining--;
+    document.getElementById('deep-think-count').textContent = deepThinkRemaining;
+    document.getElementById('btn-deep-think').textContent = '深思(d=9)';
+    document.getElementById('btn-deep-think').style.background = '#cba6f7';
+    if (deepThinkRemaining <= 0) document.getElementById('btn-deep-think').disabled = true;
+  } else if (timeTrackOn) {
+    const ownTotal = state ? (state.total_time[state.current_team] ?? 0) : 0;
+    aiDepth = (ownTotal > oppTotalTime + 30) ? 7 : 8;
+    document.getElementById('auto-depth-display').textContent = 'd=' + aiDepth;
+  } else {
+    aiDepth = parseInt(document.getElementById('ai-depth').value, 10) || 7;
+  }
   const stabilityN   = parseInt(document.getElementById('ai-stability-n').value, 10) || 3;
   const stabilityT   = parseInt(document.getElementById('ai-stability-t').value, 10) || 15;
 
@@ -862,6 +900,37 @@ document.getElementById('btn-ai').addEventListener('click', async () => {
   renderBoard();
 
   document.getElementById('btn-ai').disabled = false;
+});
+
+/* ── 深思系統 ────────────────────────────────────────────── */
+function updateAutoDepthDisplay() {
+  if (!document.getElementById('time-track-toggle').checked) return;
+  const ownTotal = state ? (state.total_time[state.current_team] ?? 0) : 0;
+  const d = (ownTotal > oppTotalTime + 30) ? 7 : 8;
+  document.getElementById('auto-depth-display').textContent = 'd=' + d;
+}
+
+document.getElementById('time-track-toggle').addEventListener('change', function () {
+  document.getElementById('time-track-panel').style.display = this.checked ? 'block' : 'none';
+  if (this.checked) updateAutoDepthDisplay();
+});
+
+document.getElementById('btn-update-opp-time').addEventListener('click', () => {
+  const t = parseFloat(document.getElementById('opp-move-time').value);
+  if (!isNaN(t) && t >= 0) {
+    oppTotalTime += t;
+    document.getElementById('opp-total-display').textContent = oppTotalTime.toFixed(1);
+    document.getElementById('opp-move-time').value = '';
+    updateAutoDepthDisplay();
+  }
+});
+
+document.getElementById('btn-deep-think').addEventListener('click', () => {
+  if (deepThinkRemaining <= 0) return;
+  deepThinkActivated = !deepThinkActivated;
+  const btn = document.getElementById('btn-deep-think');
+  btn.textContent  = deepThinkActivated ? '深思(d=9) ✓' : '深思(d=9)';
+  btn.style.background = deepThinkActivated ? '#f38ba8' : '#cba6f7';
 });
 
 /* ── 單筆 AI 參數衝突同步 ───────────────────────────────────── */
@@ -1288,6 +1357,15 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
   gameOverModalShown  = false;
   state    = data.state;
   selected = null; validMoves = [];
+
+  oppTotalTime = 0; deepThinkRemaining = 3; deepThinkActivated = false;
+  document.getElementById('opp-total-display').textContent = '0.0';
+  document.getElementById('opp-move-time').value = '';
+  document.getElementById('deep-think-count').textContent = '3';
+  document.getElementById('btn-deep-think').disabled = false;
+  document.getElementById('btn-deep-think').textContent = '深思(d=9)';
+  document.getElementById('btn-deep-think').style.background = '#cba6f7';
+  document.getElementById('auto-depth-display').textContent = 'd=8';
 
   document.getElementById('btn-confirm-ai').disabled = true;
   document.getElementById('btn-apply-relocation').disabled = true;
